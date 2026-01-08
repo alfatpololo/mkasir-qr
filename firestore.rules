@@ -1,0 +1,42 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Categories - public read and write (no auth required for this demo app)
+    // NOTE: For production, add authentication or IP restrictions
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if true; // Allow all writes for demo - add auth in production
+    }
+    
+    // Products - public read and write (no auth required for this demo app)
+    // NOTE: For production, add authentication or IP restrictions
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if true; // Allow all writes for demo - add auth in production
+    }
+    
+    // Tables - public read and write (no auth required for this demo app)
+    // NOTE: For production, add authentication or IP restrictions
+    match /tables/{tableId} {
+      allow read: if true;
+      allow write: if true; // Allow all writes for demo - add auth in production
+    }
+    
+    // Orders - public create and read, public update (for admin panel)
+    // NOTE: For production, restrict update to authenticated admin users
+    match /orders/{orderId} {
+      allow create: if true;
+      allow read: if true;
+      allow update: if true; // Allow all updates for demo - add auth in production
+    }
+    
+    // Payments - public create and read, public update (for payment processing)
+    // NOTE: For production, restrict update to authenticated admin users or payment gateway
+    match /payments/{paymentId} {
+      allow create: if true;
+      allow read: if true;
+      allow update: if true; // Allow all updates for demo - add auth in production
+    }
+  }
+}
+

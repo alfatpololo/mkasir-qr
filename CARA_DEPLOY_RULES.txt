@@ -1,0 +1,78 @@
+═══════════════════════════════════════════════════════════════
+  CARA DEPLOY FIRESTORE RULES - PILIH SALAH SATU
+═══════════════════════════════════════════════════════════════
+
+📌 METODE 1: VIA FIREBASE CONSOLE (PALING MUDAH - REKOMENDASI)
+═══════════════════════════════════════════════════════════════
+
+1. Buka browser, kunjungi: https://console.firebase.google.com/
+   
+2. Login dengan akun Google Anda
+
+3. Pilih project: qr-mkasir
+
+4. Di menu kiri, klik "Firestore Database"
+
+5. Klik tab "Rules" (di bagian atas)
+
+6. Buka file firestore.rules di project Anda, COPY SEMUA ISI-NYA
+
+7. Paste ke editor rules di Firebase Console
+
+8. Klik tombol "Publish" (warna biru di kanan atas)
+
+9. Tunggu sampai muncul notifikasi "Rules published successfully"
+
+10. Selesai! Refresh halaman admin Anda dan coba buat meja lagi
+
+
+📌 METODE 2: VIA TERMINAL (Jika sudah install Firebase CLI)
+═══════════════════════════════════════════════════════════════
+
+1. Install Firebase CLI (jika belum):
+   npm install -g firebase-tools
+   
+   ATAU install lokal di project:
+   npm install firebase-tools --save-dev
+
+2. Login:
+   npx firebase login
+
+3. Init (jika belum):
+   npx firebase init firestore
+   - Pilih project: qr-mkasir
+   - File rules: firestore.rules (sudah ada)
+
+4. Deploy:
+   npx firebase deploy --only firestore:rules
+
+
+═══════════════════════════════════════════════════════════════
+  VERIFIKASI
+═══════════════════════════════════════════════════════════════
+
+Setelah deploy:
+1. Refresh halaman /admin/tables
+2. Coba klik "Tambah Meja"
+3. Jika masih error, buka Browser Console (F12) dan lihat error message
+
+
+═══════════════════════════════════════════════════════════════
+  TROUBLESHOOTING
+═══════════════════════════════════════════════════════════════
+
+❌ Error: "Missing or insufficient permissions"
+   → Pastikan rules sudah di-deploy
+   → Refresh halaman setelah deploy
+   → Clear browser cache (Ctrl+Shift+R atau Cmd+Shift+R)
+
+❌ Error: "Firestore is not enabled"
+   → Buka Firebase Console → Firestore Database
+   → Klik "Create database"
+   → Pilih mode: "Start in test mode" atau "Production mode"
+
+❌ Masih error setelah deploy?
+   → Cek Browser Console (F12) untuk error detail
+   → Pastikan rules di Firebase Console sudah sesuai dengan firestore.rules
+   → Pastikan Firestore Database sudah aktif
+
