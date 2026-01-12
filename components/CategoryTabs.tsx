@@ -16,33 +16,36 @@ export const CategoryTabs: React.FC<CategoryTabsProps> = ({
   onCategoryChange,
 }) => {
   return (
-    <div className="flex gap-2 overflow-x-auto pb-2 px-4 scrollbar-hide">
-      <button
-        onClick={() => onCategoryChange(null)}
-        className={cn(
-          'px-4 py-2 rounded-full whitespace-nowrap font-medium transition-colors',
-          activeCategory === null
-            ? 'bg-primary-600 text-white'
-            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-        )}
-      >
-        Semua
-      </button>
-      {categories.map((category) => (
+    <div className="sticky top-[140px] z-30 bg-white border-b border-gray-100 pb-3 pt-4 shadow-sm">
+      <div className="flex gap-2 overflow-x-auto pb-2 px-4 scrollbar-hide">
         <button
-          key={category}
-          onClick={() => onCategoryChange(category)}
+          onClick={() => onCategoryChange(null)}
           className={cn(
-            'px-4 py-2 rounded-full whitespace-nowrap font-medium transition-colors',
-            activeCategory === category
-              ? 'bg-primary-600 text-white'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            'px-5 py-2.5 rounded-full whitespace-nowrap font-semibold text-sm transition-all duration-200 shadow-sm',
+            activeCategory === null
+              ? 'bg-primary-600 text-white shadow-md scale-105'
+              : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-200'
           )}
         >
-          {category}
+          Semua
         </button>
-      ))}
+        {categories.map((category) => (
+          <button
+            key={category}
+            onClick={() => onCategoryChange(category)}
+            className={cn(
+              'px-5 py-2.5 rounded-full whitespace-nowrap font-semibold text-sm transition-all duration-200 shadow-sm',
+              activeCategory === category
+                ? 'bg-primary-600 text-white shadow-md scale-105'
+                : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-200'
+            )}
+          >
+            {category}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }
+
 

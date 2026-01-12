@@ -26,31 +26,43 @@ export const MenuCard: React.FC<MenuCardProps> = ({ product }) => {
   }
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-      <div className="relative aspect-square bg-gray-100">
-        {product.image ? (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-lg transition-all duration-300 group active:scale-[0.98]">
+      <div className="relative aspect-square bg-gray-50 overflow-hidden">
+        {product.image || product.imageUrl ? (
           <img
-            src={product.image}
+            src={product.image || product.imageUrl}
             alt={product.name}
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-gray-400">
-            No Image
+          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
+            <div className="text-center">
+              <div className="w-20 h-20 mx-auto mb-2 rounded-2xl bg-white shadow-md flex items-center justify-center">
+                <span className="text-4xl">🍽️</span>
+              </div>
+              <p className="text-xs text-gray-400 font-medium">No Image</p>
+            </div>
           </div>
         )}
         {isOutOfStock && (
-          <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-            <span className="text-white font-semibold">Habis</span>
+          <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+            <div className="bg-red-500 text-white px-4 py-2 rounded-xl font-bold shadow-xl">
+              Habis
+            </div>
           </div>
         )}
       </div>
       
       <div className="p-4">
-        <h3 className="font-semibold text-gray-900 mb-1">{product.name}</h3>
-        <p className="text-lg font-bold text-primary-600 mb-3">
-          {formatCurrency(product.price)}
-        </p>
+        <h3 className="font-bold text-gray-900 mb-2 text-base line-clamp-2 min-h-[2.5rem] leading-tight">
+          {product.name}
+        </h3>
+        
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xl font-bold text-primary-600">
+            {formatCurrency(product.price)}
+          </p>
+        </div>
         
         <Button
           variant="primary"
@@ -59,11 +71,12 @@ export const MenuCard: React.FC<MenuCardProps> = ({ product }) => {
           onClick={handleAddToCart}
           disabled={isOutOfStock}
         >
-          <Plus className="w-4 h-4 mr-1" />
-          Tambah
+          <Plus className="w-4 h-4" />
+          <span>Tambah</span>
         </Button>
       </div>
     </div>
   )
 }
+
 

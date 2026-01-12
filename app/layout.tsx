@@ -6,8 +6,8 @@ import { DashboardLayout } from '@/components/DashboardLayout'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'QR Order - Self Service Food Ordering',
-  description: 'QR-based self service food ordering system',
+  title: 'MKASIR - Manajemen Kasir',
+  description: 'Sistem manajemen kasir berbasis QR untuk restoran',
 }
 
 export default function RootLayout({

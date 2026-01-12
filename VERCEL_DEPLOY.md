@@ -106,3 +106,5 @@ Jika ingin update QR code yang sudah ada:
 
 QR code akan **selalu bekerja** dengan domain yang benar, baik di development maupun production! 🎉
 
+
+

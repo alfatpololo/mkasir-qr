@@ -1,13 +1,13 @@
 'use client'
 
 import React, { useState } from 'react'
-import { Minus, Plus, X, ShoppingCart } from 'lucide-react'
+import { Minus, Plus, X, ShoppingCart, Mail, User, Phone } from 'lucide-react'
 import { useCartStore } from '@/lib/cart-store'
 import { formatCurrency } from '@/lib/utils'
 import { Button } from '@/components/Button'
 
 interface CartProps {
-  onCheckout: (customerName: string, customerPhone: string, paymentMethod: 'QRIS_RESTAURANT' | 'CASHIER') => void
+  onCheckout: (customerName: string, customerPhone: string, customerEmail: string, paymentMethod: 'QRIS_RESTAURANT' | 'CASHIER') => void
 }
 
 export const Cart: React.FC<CartProps> = ({ onCheckout }) => {
@@ -15,6 +15,7 @@ export const Cart: React.FC<CartProps> = ({ onCheckout }) => {
   const [showCheckoutForm, setShowCheckoutForm] = useState(false)
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
+  const [customerEmail, setCustomerEmail] = useState('')
   const [paymentMethod, setPaymentMethod] = useState<'QRIS_RESTAURANT' | 'CASHIER'>('QRIS_RESTAURANT')
   const items = useCartStore((state) => state.items)
   const updateQuantity = useCartStore((state) => state.updateQuantity)
@@ -39,15 +40,26 @@ export const Cart: React.FC<CartProps> = ({ onCheckout }) => {
       alert('Mohon isi nomor HP')
       return
     }
+    if (!customerEmail.trim()) {
+      alert('Mohon isi email')
+      return
+    }
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(customerEmail.trim())) {
+      alert('Mohon masukkan email yang valid')
+      return
+    }
     if (!paymentMethod) {
       alert('Mohon pilih metode pembayaran')
       return
     }
     setIsOpen(false)
     setShowCheckoutForm(false)
-    onCheckout(customerName.trim(), customerPhone.trim(), paymentMethod)
+    onCheckout(customerName.trim(), customerPhone.trim(), customerEmail.trim(), paymentMethod)
     setCustomerName('')
     setCustomerPhone('')
+    setCustomerEmail('')
     setPaymentMethod('QRIS_RESTAURANT')
   }
 
@@ -69,29 +81,32 @@ export const Cart: React.FC<CartProps> = ({ onCheckout }) => {
   return (
     <>
       {/* Sticky Bottom Bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50">
+      <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-r from-white via-white to-white border-t border-gray-200 shadow-2xl z-50 backdrop-blur-sm">
         <div className="max-w-md mx-auto">
           <button
+            data-cart-trigger
             onClick={() => setIsOpen(true)}
-            className="w-full p-4 flex items-center justify-between"
+            className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
           >
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-4">
               <div className="relative">
-                <ShoppingCart className="w-6 h-6 text-primary-600" />
+                <div className="w-12 h-12 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center shadow-md">
+                  <ShoppingCart className="w-6 h-6 text-white" />
+                </div>
                 {itemCount > 0 && (
-                  <span className="absolute -top-2 -right-2 bg-primary-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow-lg border-2 border-white">
                     {itemCount}
                   </span>
                 )}
               </div>
               <div className="text-left">
-                <p className="text-sm text-gray-600">{itemCount} item</p>
-                <p className="text-lg font-bold text-gray-900">
+                <p className="text-xs font-medium text-gray-500">{itemCount} item di keranjang</p>
+                <p className="text-xl font-bold bg-gradient-to-r from-primary-600 to-primary-700 bg-clip-text text-transparent">
                   {formatCurrency(total)}
                 </p>
               </div>
             </div>
-            <Button variant="primary" size="sm">
+            <Button variant="primary" size="sm" className="shadow-md">
               Lihat Keranjang
             </Button>
           </button>
@@ -100,57 +115,64 @@ export const Cart: React.FC<CartProps> = ({ onCheckout }) => {
 
       {/* Cart Modal */}
       {isOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-end">
-          <div className="bg-white w-full max-h-[80vh] rounded-t-2xl overflow-hidden flex flex-col">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end">
+          <div className="bg-white w-full max-h-[85vh] rounded-t-3xl overflow-hidden flex flex-col shadow-2xl border-t-4 border-primary-500">
             {/* Header */}
-            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
-              <h2 className="text-xl font-bold">Keranjang</h2>
+            <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-primary-50/50 to-white flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
+                  Keranjang Saya
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">{itemCount} item</p>
+              </div>
               <button
                 onClick={() => setIsOpen(false)}
-                className="p-2 hover:bg-gray-100 rounded-full"
+                className="p-2 hover:bg-gray-100 rounded-xl transition-all hover:scale-110"
               >
-                <X className="w-5 h-5" />
+                <X className="w-6 h-6 text-gray-600" />
               </button>
             </div>
 
             {/* Items List */}
-            <div className="flex-1 overflow-y-auto p-4">
+            <div className="flex-1 overflow-y-auto p-6">
               {items.map((item) => (
                 <div
                   key={item.productId}
-                  className="mb-4 pb-4 border-b border-gray-100 last:border-0"
+                  className="mb-5 pb-5 border-b border-gray-100 last:border-0 bg-gradient-to-r from-white to-gray-50/50 p-4 rounded-xl"
                 >
-                  <div className="flex items-start justify-between mb-2">
+                  <div className="flex items-start justify-between mb-3">
                     <div className="flex-1">
-                      <h3 className="font-semibold text-gray-900">{item.name}</h3>
-                      <p className="text-sm text-gray-600">
-                        {formatCurrency(item.price)}
+                      <h3 className="font-bold text-gray-900 text-base mb-1">{item.name}</h3>
+                      <p className="text-sm font-semibold text-primary-600">
+                        {formatCurrency(item.price)} / item
                       </p>
                     </div>
                     <button
                       onClick={() => removeItem(item.productId)}
-                      className="p-1 hover:bg-gray-100 rounded"
+                      className="p-2 hover:bg-red-50 rounded-xl transition-all hover:scale-110"
                     >
-                      <X className="w-4 h-4 text-gray-500" />
+                      <X className="w-5 h-5 text-red-500" />
                     </button>
                   </div>
 
                   {/* Quantity Control */}
-                  <div className="flex items-center gap-3 mb-2">
-                    <button
-                      onClick={() => updateQuantity(item.productId, item.qty - 1)}
-                      className="p-1 bg-gray-100 rounded hover:bg-gray-200"
-                    >
-                      <Minus className="w-4 h-4" />
-                    </button>
-                    <span className="font-semibold w-8 text-center">{item.qty}</span>
-                    <button
-                      onClick={() => updateQuantity(item.productId, item.qty + 1)}
-                      className="p-1 bg-gray-100 rounded hover:bg-gray-200"
-                    >
-                      <Plus className="w-4 h-4" />
-                    </button>
-                    <span className="ml-auto font-bold">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="flex items-center gap-2 bg-white rounded-xl border border-gray-200 p-1 shadow-sm">
+                      <button
+                        onClick={() => updateQuantity(item.productId, item.qty - 1)}
+                        className="p-2 bg-gray-100 rounded-lg hover:bg-primary-100 hover:text-primary-600 transition-all"
+                      >
+                        <Minus className="w-4 h-4" />
+                      </button>
+                      <span className="font-bold w-8 text-center text-gray-900">{item.qty}</span>
+                      <button
+                        onClick={() => updateQuantity(item.productId, item.qty + 1)}
+                        className="p-2 bg-gray-100 rounded-lg hover:bg-primary-100 hover:text-primary-600 transition-all"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <span className="ml-auto text-lg font-bold bg-gradient-to-r from-primary-600 to-primary-700 bg-clip-text text-transparent">
                       {formatCurrency(item.price * item.qty)}
                     </span>
                   </div>
@@ -158,31 +180,32 @@ export const Cart: React.FC<CartProps> = ({ onCheckout }) => {
                   {/* Note Input */}
                   <input
                     type="text"
-                    placeholder="Catatan (opsional)"
+                    placeholder="💬 Catatan khusus (opsional)"
                     value={item.note || ''}
                     onChange={(e) => updateNote(item.productId, e.target.value)}
-                    className="w-full mt-2 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white transition-all"
                   />
                 </div>
               ))}
             </div>
 
             {/* Footer */}
-            <div className="p-4 border-t border-gray-200 bg-gray-50">
+            <div className="p-6 border-t border-gray-200 bg-gradient-to-r from-gray-50 to-white">
               {!showCheckoutForm ? (
                 <>
-                  <div className="flex items-center justify-between mb-4">
-                    <span className="text-lg font-semibold">Total</span>
-                    <span className="text-2xl font-bold text-primary-600">
+                  <div className="flex items-center justify-between mb-5 p-4 bg-gradient-to-r from-primary-50 to-primary-100 rounded-xl border border-primary-200">
+                    <span className="text-lg font-bold text-gray-900">Total Pembayaran</span>
+                    <span className="text-2xl font-bold bg-gradient-to-r from-primary-600 to-primary-700 bg-clip-text text-transparent">
                       {formatCurrency(total)}
                     </span>
                   </div>
                   <Button
                     variant="primary"
-                    className="w-full"
+                    className="w-full shadow-lg"
                     onClick={handleCheckoutClick}
                   >
-                    Checkout
+                    <ShoppingCart className="w-5 h-5" />
+                    <span>Checkout Sekarang</span>
                   </Button>
                 </>
               ) : (
@@ -191,28 +214,50 @@ export const Cart: React.FC<CartProps> = ({ onCheckout }) => {
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Nama Pembeli *
                     </label>
-                    <input
-                      type="text"
-                      value={customerName}
-                      onChange={(e) => setCustomerName(e.target.value)}
-                      placeholder="Masukkan nama pembeli"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      required
-                      autoFocus
-                    />
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                      <input
+                        type="text"
+                        value={customerName}
+                        onChange={(e) => setCustomerName(e.target.value)}
+                        placeholder="Masukkan nama pembeli"
+                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        required
+                        autoFocus
+                      />
+                    </div>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Nomor HP *
                     </label>
-                    <input
-                      type="tel"
-                      value={customerPhone}
-                      onChange={(e) => setCustomerPhone(e.target.value)}
-                      placeholder="08xxxxxxxxxx"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                      required
-                    />
+                    <div className="relative">
+                      <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                      <input
+                        type="tel"
+                        value={customerPhone}
+                        onChange={(e) => setCustomerPhone(e.target.value)}
+                        placeholder="08xxxxxxxxxx"
+                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Email *
+                    </label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                      <input
+                        type="email"
+                        value={customerEmail}
+                        onChange={(e) => setCustomerEmail(e.target.value)}
+                        placeholder="email@example.com"
+                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        required
+                      />
+                    </div>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">

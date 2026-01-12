@@ -2,6 +2,8 @@
 
 import React, { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import Image from 'next/image'
+import { ShoppingCart, Filter, Search, X, Check, LogIn, User } from 'lucide-react'
 import { MenuList } from './MenuList'
 import { Cart } from './Cart'
 import { OrderStatusComponent } from '@/components/OrderStatus'
@@ -10,6 +12,8 @@ import { getTable, subscribeToTable } from '@/lib/firestore'
 import { Table } from '@/lib/types'
 import { createOrder } from '@/lib/firestore'
 import { formatCurrency } from '@/lib/utils'
+import { Button } from '@/components/Button'
+import { getCurrentUser, onAuthStateChange } from '@/lib/auth'
 
 export default function MenuPage() {
   const params = useParams()
@@ -21,11 +25,28 @@ export default function MenuPage() {
   const [error, setError] = useState<string | null>(null)
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null)
   const [showOrderStatus, setShowOrderStatus] = useState(false)
+  const [scrolled, setScrolled] = useState(false)
+  const [showSearch, setShowSearch] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [showFilter, setShowFilter] = useState(false)
+  const [filterCategory, setFilterCategory] = useState<string | null>(null)
+  const [availableCategories, setAvailableCategories] = useState<string[]>([])
+  const [isMobile, setIsMobile] = useState(true)
+  const [currentUser, setCurrentUser] = useState<any>(null)
   
   const setTableNumber = useCartStore((state) => state.setTableNumber)
   const items = useCartStore((state) => state.items)
   const getTotal = useCartStore((state) => state.getTotal)
   const clearCart = useCartStore((state) => state.clearCart)
+
+  // Handle scroll for header
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 10)
+    }
+    window.addEventListener('scroll', handleScroll)
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
 
   // Validate table number
   useEffect(() => {
@@ -84,9 +105,39 @@ export default function MenuPage() {
     }
   }, [tableNumber])
 
+  // Check if mobile device
+  useEffect(() => {
+    const checkMobile = () => {
+      const isMobileDevice = window.innerWidth < 768 // md breakpoint
+      setIsMobile(isMobileDevice)
+    }
+    
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
+  // Check auth state
+  useEffect(() => {
+    const unsubscribe = onAuthStateChange((user) => {
+      setCurrentUser(user)
+    })
+    return () => unsubscribe()
+  }, [])
+
+  // Handle scroll for header
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 10)
+    }
+    window.addEventListener('scroll', handleScroll)
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
+
   const handleCheckout = async (
     customerName: string,
     customerPhone: string,
+    customerEmail: string,
     paymentMethod: 'QRIS_RESTAURANT' | 'CASHIER'
   ) => {
     if (items.length === 0) return
@@ -117,6 +168,16 @@ export default function MenuPage() {
         alert('Nomor HP harus diisi')
         return
       }
+      if (!customerEmail || customerEmail.trim() === '') {
+        alert('Email harus diisi')
+        return
+      }
+      // Basic email validation
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (!emailRegex.test(customerEmail.trim())) {
+        alert('Mohon masukkan email yang valid')
+        return
+      }
       if (!paymentMethod || (paymentMethod !== 'QRIS_RESTAURANT' && paymentMethod !== 'CASHIER')) {
         alert('Metode pembayaran tidak valid')
         return
@@ -144,6 +205,7 @@ export default function MenuPage() {
         tableNumber,
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
+        customerEmail: customerEmail.trim(),
         paymentMethod,
         itemsCount: orderItems.length,
         total,
@@ -154,6 +216,7 @@ export default function MenuPage() {
         tableNumber,
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
+        customerEmail: customerEmail.trim(),
         paymentMethod,
         items: orderItems,
         status: initialStatus,
@@ -241,29 +304,235 @@ export default function MenuPage() {
     )
   }
 
+  // Show desktop warning
+  if (!isMobile) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-primary-50 to-white flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-gray-100 p-8 text-center">
+          <div className="w-20 h-20 mx-auto mb-6 bg-primary-100 rounded-full flex items-center justify-center">
+            <svg className="w-10 h-10 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-3">
+            Buka di Mobile Device
+          </h1>
+          <p className="text-gray-600 mb-6">
+            Menu ini hanya dapat diakses melalui mobile device. Silakan buka halaman ini menggunakan smartphone atau tablet Anda.
+          </p>
+          <div className="space-y-2 text-sm text-gray-500">
+            <p>📱 Scan QR code di meja menggunakan kamera smartphone</p>
+            <p>🌐 Atau buka langsung di browser mobile Anda</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      {/* Header with Table Number */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-40">
+      {/* Header dengan Background Solid */}
+      <div className={`sticky top-0 z-40 transition-all duration-300 ${
+        scrolled 
+          ? 'bg-white shadow-md border-b border-gray-100' 
+          : 'bg-white'
+      }`}>
         <div className="max-w-md mx-auto px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">Menu</h1>
-              <p className="text-sm text-gray-600">Meja {tableNumber}</p>
+          {/* Top Bar: Logo, Cart Icon, Login Button */}
+          <div className="flex items-center justify-between mb-3">
+            {/* Logo - Kiri */}
+            <div className="w-20 h-20 relative">
+              <Image
+                src="/images/logo.png"
+                alt="MKASIR Logo"
+                width={80}
+                height={80}
+                className="object-contain w-full h-full"
+                priority
+                unoptimized
+              />
             </div>
-            {items.length > 0 && (
-              <div className="text-right">
-                <p className="text-xs text-gray-500">Total</p>
-                <p className="text-lg font-bold text-primary-600">
-                  {formatCurrency(getTotal())}
-                </p>
+            
+            {/* Cart Icon & Login Button - Kanan */}
+            <div className="flex items-center gap-2">
+              {/* Cart Icon */}
+              <button
+                onClick={() => {
+                  const cartButton = document.querySelector('[data-cart-trigger]') as HTMLElement
+                  cartButton?.click()
+                }}
+                className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <ShoppingCart className="w-6 h-6 text-gray-700" />
+                {items.length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                    {items.length}
+                  </span>
+                )}
+              </button>
+              
+              {/* Login/Profile Button */}
+              {currentUser ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => router.push('/profile')}
+                >
+                  <User className="w-4 h-4" />
+                  <span>Profil</span>
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => router.push('/login')}
+                >
+                  <LogIn className="w-4 h-4" />
+                  <span>Login</span>
+                </Button>
+              )}
+            </div>
+          </div>
+          
+          {/* Status Meja - Kotak Kecil di Atas */}
+          <div className="mb-3">
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-primary-50 rounded-lg border border-primary-200">
+              <span className="text-xs font-semibold text-primary-600">Meja</span>
+              <span className="text-sm font-bold text-primary-700">{tableNumber}</span>
+            </div>
+          </div>
+          
+          {/* Filter & Search - Sejajar Berdekatan */}
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setShowFilter(!showFilter)}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-primary-600 to-primary-700 text-white rounded-lg hover:from-primary-700 hover:to-primary-800 transition-all shadow-md"
+            >
+              <Filter className="w-4 h-4" />
+              <span className="text-sm font-medium">Filter</span>
+              {filterCategory && (
+                <span className="ml-1 w-2 h-2 bg-white rounded-full"></span>
+              )}
+            </button>
+            {showSearch ? (
+              <div className="flex-1 relative">
+                <input
+                  id="menu-search-input"
+                  type="text"
+                  placeholder="Cari menu..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full px-4 py-2 pr-10 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                  autoFocus
+                />
+                <button
+                  onClick={() => {
+                    setShowSearch(false)
+                    setSearchQuery('')
+                  }}
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
+                >
+                  <X className="w-4 h-4 text-gray-500" />
+                </button>
               </div>
+            ) : (
+              <button 
+                onClick={() => setShowSearch(true)}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <Search className="w-4 h-4 text-gray-600" />
+                <span className="text-sm font-medium text-gray-700">Search</span>
+              </button>
             )}
           </div>
         </div>
       </div>
 
-      <MenuList />
+      <MenuList 
+        searchQuery={showSearch ? searchQuery : ''} 
+        filterCategory={filterCategory}
+        onCategoriesReady={setAvailableCategories}
+      />
+
+      {/* Filter Modal */}
+      {showFilter && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end">
+          <div className="bg-white w-full rounded-t-2xl p-6 max-h-[70vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-gray-900">Filter Menu</h3>
+              <button
+                onClick={() => setShowFilter(false)}
+                className="p-2 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm font-semibold text-gray-700 mb-3">Kategori</p>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => {
+                      setFilterCategory(null)
+                      setShowFilter(false)
+                    }}
+                    className={`w-full flex items-center justify-between px-4 py-3 rounded-lg border-2 transition-all ${
+                      filterCategory === null
+                        ? 'border-primary-500 bg-primary-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <span className="font-medium text-gray-900">Semua Kategori</span>
+                    {filterCategory === null && (
+                      <Check className="w-5 h-5 text-primary-600" />
+                    )}
+                  </button>
+                  {availableCategories.map((category) => (
+                    <button
+                      key={category}
+                      onClick={() => {
+                        setFilterCategory(category)
+                        setShowFilter(false)
+                      }}
+                      className={`w-full flex items-center justify-between px-4 py-3 rounded-lg border-2 transition-all ${
+                        filterCategory === category
+                          ? 'border-primary-500 bg-primary-50'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                    >
+                      <span className="font-medium text-gray-900">{category}</span>
+                      {filterCategory === category && (
+                        <Check className="w-5 h-5 text-primary-600" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex gap-3">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  setFilterCategory(null)
+                  setShowFilter(false)
+                }}
+              >
+                Reset
+              </Button>
+              <Button
+                variant="primary"
+                className="flex-1"
+                onClick={() => setShowFilter(false)}
+              >
+                Terapkan
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Cart onCheckout={handleCheckout} />
     </div>

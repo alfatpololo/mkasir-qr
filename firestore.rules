@@ -37,6 +37,14 @@ service cloud.firestore {
       allow read: if true;
       allow update: if true; // Allow all updates for demo - add auth in production
     }
+    
+    // Customers - public create and read, public update (for customer registration)
+    // NOTE: For production, restrict write to authenticated users only
+    match /customers/{customerId} {
+      allow create: if true;
+      allow read: if true;
+      allow update: if true; // Allow all updates for demo - add auth in production
+    }
   }
 }
 

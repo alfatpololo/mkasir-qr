@@ -1,6 +1,8 @@
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app'
 import { getFirestore, Firestore } from 'firebase/firestore'
 import { getAnalytics, Analytics } from 'firebase/analytics'
+import { getStorage, FirebaseStorage } from 'firebase/storage'
+import { getAuth, Auth } from 'firebase/auth'
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || 'AIzaSyAt7hiqMXzVur_QFbPXnqDkgPiue42Ui70',
@@ -15,6 +17,8 @@ const firebaseConfig = {
 // Initialize Firebase
 let app: FirebaseApp
 let db: Firestore
+let storage: FirebaseStorage
+let auth: Auth
 let analytics: Analytics | null = null
 
 if (typeof window !== 'undefined') {
@@ -25,6 +29,8 @@ if (typeof window !== 'undefined') {
   }
   
   db = getFirestore(app)
+  storage = getStorage(app)
+  auth = getAuth(app)
   
   // Initialize Analytics only in browser
   try {
@@ -36,8 +42,10 @@ if (typeof window !== 'undefined') {
   // Server-side: create a dummy app (won't be used)
   app = initializeApp(firebaseConfig)
   db = getFirestore(app)
+  storage = getStorage(app)
+  auth = getAuth(app)
 }
 
-export { db, analytics }
+export { db, storage, auth, analytics }
 export default app
 

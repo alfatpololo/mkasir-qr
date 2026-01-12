@@ -149,15 +149,18 @@ export const createOrder = async (order: Omit<Order, 'id' | 'createdAt'>): Promi
       total: order.total,
       createdAt: Timestamp.now(),
     }
-
-    // Only add optional fields if they exist and are not undefined/null/empty
-    if (order.customerName && order.customerName.trim() !== '') {
+    
+    // Add optional fields only if they exist
+    if (order.customerName !== undefined && order.customerName !== null && order.customerName.trim() !== '') {
       cleanOrder.customerName = order.customerName.trim()
     }
-    if (order.customerPhone && order.customerPhone.trim() !== '') {
+    if (order.customerPhone !== undefined && order.customerPhone !== null && order.customerPhone.trim() !== '') {
       cleanOrder.customerPhone = order.customerPhone.trim()
     }
-    if (order.paymentMethod && (order.paymentMethod === 'QRIS_RESTAURANT' || order.paymentMethod === 'CASHIER')) {
+    if (order.customerEmail !== undefined && order.customerEmail !== null && order.customerEmail.trim() !== '') {
+      cleanOrder.customerEmail = order.customerEmail.trim()
+    }
+    if (order.paymentMethod !== undefined && order.paymentMethod !== null) {
       cleanOrder.paymentMethod = order.paymentMethod
     }
 
@@ -382,5 +385,87 @@ export const getTodayRevenue = async (): Promise<number> => {
   return orders
     .filter((order) => order.status === 'PAID')
     .reduce((sum, order) => sum + order.total, 0)
+}
+
+// Customers
+export interface Customer {
+  id: string
+  uid: string
+  email: string
+  displayName: string
+  phoneNumber?: string
+  photoURL?: string
+  createdAt: Timestamp
+  updatedAt: Timestamp
+}
+
+export const createOrUpdateCustomer = async (
+  uid: string,
+  email: string,
+  displayName: string,
+  phoneNumber?: string,
+  photoURL?: string
+): Promise<void> => {
+  const customersRef = collection(db, 'customers')
+  const q = query(customersRef, where('uid', '==', uid))
+  const snapshot = await getDocs(q)
+  
+  const customerData: any = {
+    uid,
+    email,
+    displayName,
+    photoURL: photoURL || null,
+    updatedAt: Timestamp.now(),
+  }
+  
+  if (phoneNumber) {
+    customerData.phoneNumber = phoneNumber
+  }
+  
+  if (snapshot.empty) {
+    // Create new customer
+    await addDoc(customersRef, {
+      ...customerData,
+      createdAt: Timestamp.now(),
+    })
+  } else {
+    // Update existing customer
+    const docRef = snapshot.docs[0].ref
+    await updateDoc(docRef, customerData)
+  }
+}
+
+export const getAllCustomers = async (): Promise<Customer[]> => {
+  const snapshot = await getDocs(collection(db, 'customers'))
+  return snapshot.docs.map((doc) => ({
+    id: doc.id,
+    ...doc.data(),
+  })) as Customer[]
+}
+
+export const subscribeToAllCustomers = (
+  callback: (customers: Customer[]) => void
+) => {
+  const customersRef = collection(db, 'customers')
+  const q = query(customersRef, orderBy('createdAt', 'desc'))
+  
+  return onSnapshot(q, (snapshot) => {
+    const customers = snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as Customer[]
+    callback(customers)
+  })
+}
+
+export const getCustomerByEmail = async (email: string): Promise<Customer | null> => {
+  const customersRef = collection(db, 'customers')
+  const q = query(customersRef, where('email', '==', email))
+  const snapshot = await getDocs(q)
+  
+  if (snapshot.empty) return null
+  
+  const doc = snapshot.docs[0]
+  return { id: doc.id, ...doc.data() } as Customer
 }
 

@@ -12,8 +12,8 @@ export function DashboardLayout({
 }) {
   const pathname = usePathname()
   
-  // Don't show sidebar/topbar for menu and payment pages
-  const isCustomerPage = pathname?.startsWith('/menu') || pathname?.startsWith('/payment')
+  // Don't show sidebar/topbar for menu, payment, login, and profile pages
+  const isCustomerPage = pathname?.startsWith('/menu') || pathname?.startsWith('/payment') || pathname?.startsWith('/login') || pathname?.startsWith('/profile')
   
   if (isCustomerPage) {
     return <>{children}</>

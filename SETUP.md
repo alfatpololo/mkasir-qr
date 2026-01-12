@@ -112,3 +112,5 @@ Or copy-paste the rules from `firestore.rules` into Firebase Console → Firesto
 
 4. Test QR codes work with production URL
 
+
+

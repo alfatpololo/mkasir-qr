@@ -76,3 +76,5 @@ Setelah deploy:
    → Pastikan rules di Firebase Console sudah sesuai dengan firestore.rules
    → Pastikan Firestore Database sudah aktif
 
+
+

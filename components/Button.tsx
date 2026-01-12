@@ -16,12 +16,12 @@ export const Button: React.FC<ButtonProps> = ({
   disabled,
   ...props
 }) => {
-  const baseStyles = 'font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed'
+  const baseStyles = 'font-semibold rounded-xl transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-[1.02] active:scale-[0.98]'
   
   const variants = {
-    primary: 'bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500',
-    secondary: 'bg-gray-200 text-gray-900 hover:bg-gray-300 focus:ring-gray-500',
-    outline: 'border-2 border-primary-600 text-primary-600 hover:bg-primary-50 focus:ring-primary-500',
+    primary: 'bg-gradient-to-r from-primary-600 to-primary-700 text-white hover:from-primary-700 hover:to-primary-800 focus:ring-primary-500 shadow-md shadow-primary-500/30 hover:shadow-lg hover:shadow-primary-500/40',
+    secondary: 'bg-gray-100 text-gray-900 hover:bg-gray-200 focus:ring-gray-500',
+    outline: 'border-2 border-primary-600 text-primary-600 hover:bg-gradient-to-r hover:from-primary-50 hover:to-primary-100 focus:ring-primary-500',
     ghost: 'text-gray-700 hover:bg-gray-100 focus:ring-gray-500',
   }
   
@@ -33,12 +33,18 @@ export const Button: React.FC<ButtonProps> = ({
   
   return (
     <button
-      className={cn(baseStyles, variants[variant], sizes[size], className)}
+      className={cn(
+        baseStyles, 
+        variants[variant], 
+        sizes[size],
+        'inline-flex items-center justify-center gap-2', // Ensure flex layout for icons
+        className
+      )}
       disabled={disabled || isLoading}
       {...props}
     >
       {isLoading ? (
-        <span className="flex items-center gap-2">
+        <>
           <svg
             className="animate-spin h-4 w-4"
             xmlns="http://www.w3.org/2000/svg"
@@ -59,12 +65,13 @@ export const Button: React.FC<ButtonProps> = ({
               d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
             />
           </svg>
-          Loading...
-        </span>
+          <span>Loading...</span>
+        </>
       ) : (
         children
       )}
     </button>
   )
 }
+
 

@@ -54,3 +54,5 @@ Setelah deploy, coba buat meja lagi di `/admin/tables`. Jika masih error, cek:
 - Klik "Create database"
 - Pilih mode: **Start in test mode** (atau production dengan rules yang sudah di-deploy)
 
+
+

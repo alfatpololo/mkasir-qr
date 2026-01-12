@@ -1,10 +1,11 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Button } from './Button'
-import { X } from 'lucide-react'
+import { X, Upload } from 'lucide-react'
 import { Category } from '@/lib/types'
 import { getAllCategories } from '@/lib/firestore'
+import { uploadProductImage } from '@/lib/storage'
 
 interface ProductFormProps {
   isOpen: boolean
@@ -41,7 +42,11 @@ export const ProductForm: React.FC<ProductFormProps> = ({
     imageUrl: '',
     isAvailable: true,
   })
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string>('')
+  const [uploading, setUploading] = useState(false)
   const [loading, setLoading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (isOpen) {
@@ -58,6 +63,8 @@ export const ProductForm: React.FC<ProductFormProps> = ({
         imageUrl: initialData.imageUrl,
         isAvailable: initialData.isAvailable,
       })
+      setImagePreview(initialData.imageUrl || '')
+      setImageFile(null)
     } else {
       setFormData({
         name: '',
@@ -66,8 +73,44 @@ export const ProductForm: React.FC<ProductFormProps> = ({
         imageUrl: '',
         isAvailable: true,
       })
+      setImagePreview('')
+      setImageFile(null)
     }
   }, [initialData])
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        alert('File harus berupa gambar')
+        return
+      }
+      
+      // Validate file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        alert('Ukuran gambar maksimal 5MB')
+        return
+      }
+      
+      setImageFile(file)
+      
+      // Create preview
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  const handleRemoveImage = () => {
+    setImageFile(null)
+    setImagePreview('')
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
 
   if (!isOpen) return null
 
@@ -76,14 +119,35 @@ export const ProductForm: React.FC<ProductFormProps> = ({
     if (!formData.name.trim() || !formData.price || !formData.categoryId) return
 
     setLoading(true)
+    setUploading(false)
+    
     try {
+      let imageUrl = formData.imageUrl
+      
+      // Upload image if file is selected
+      if (imageFile) {
+        setUploading(true)
+        try {
+          imageUrl = await uploadProductImage(imageFile, initialData?.name)
+        } catch (uploadError) {
+          console.error('Error uploading image:', uploadError)
+          alert('Gagal mengupload gambar. Silakan coba lagi.')
+          setLoading(false)
+          setUploading(false)
+          return
+        }
+        setUploading(false)
+      }
+      
       await onSubmit({
         name: formData.name.trim(),
         price: parseFloat(formData.price),
         categoryId: formData.categoryId,
-        imageUrl: formData.imageUrl || 'https://via.placeholder.com/400',
+        imageUrl: imageUrl || 'https://via.placeholder.com/400',
         isAvailable: formData.isAvailable,
       })
+      
+      // Reset form
       setFormData({
         name: '',
         price: '',
@@ -91,12 +155,18 @@ export const ProductForm: React.FC<ProductFormProps> = ({
         imageUrl: '',
         isAvailable: true,
       })
+      setImageFile(null)
+      setImagePreview('')
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
       onClose()
     } catch (error) {
       console.error('Error submitting product:', error)
       alert('Gagal menyimpan produk')
     } finally {
       setLoading(false)
+      setUploading(false)
     }
   }
 
@@ -169,18 +239,71 @@ export const ProductForm: React.FC<ProductFormProps> = ({
 
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              URL Gambar
+              Gambar Produk
             </label>
-            <input
-              type="url"
-              value={formData.imageUrl}
-              onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
-              placeholder="https://example.com/image.jpg"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Kosongkan untuk menggunakan gambar default
-            </p>
+            
+            {/* Image Preview */}
+            {imagePreview && (
+              <div className="mb-3 relative">
+                <div className="w-full h-48 rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
+                  <img
+                    src={imagePreview}
+                    alt="Preview"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleRemoveImage}
+                  className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors shadow-lg"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+            
+            {/* Upload Button */}
+            <div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleImageSelect}
+                className="hidden"
+                id="image-upload"
+              />
+              <label
+                htmlFor="image-upload"
+                className="flex items-center justify-center gap-2 w-full px-4 py-3 border-2 border-dashed border-gray-300 rounded-xl cursor-pointer hover:border-primary-500 hover:bg-primary-50 transition-all"
+              >
+                <Upload className="w-5 h-5 text-gray-600" />
+                <span className="text-sm font-medium text-gray-700">
+                  {imagePreview ? 'Ganti Gambar' : 'Upload Gambar'}
+                </span>
+              </label>
+              <p className="text-xs text-gray-500 mt-2 text-center">
+                Format: JPG, PNG, WebP (Maks. 5MB)
+              </p>
+            </div>
+            
+            {/* URL Input (Alternative) */}
+            <div className="mt-3">
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Atau masukkan URL gambar
+              </label>
+              <input
+                type="url"
+                value={formData.imageUrl}
+                onChange={(e) => {
+                  setFormData({ ...formData, imageUrl: e.target.value })
+                  if (e.target.value && !imageFile) {
+                    setImagePreview(e.target.value)
+                  }
+                }}
+                placeholder="https://example.com/image.jpg"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+              />
+            </div>
           </div>
 
           <div className="mb-6">
@@ -204,15 +327,17 @@ export const ProductForm: React.FC<ProductFormProps> = ({
               type="submit"
               variant="primary"
               className="flex-1"
-              isLoading={loading}
+              isLoading={loading || uploading}
+              disabled={uploading}
             >
-              {mode === 'create' ? 'Simpan' : 'Update'}
+              {uploading ? 'Mengupload...' : mode === 'create' ? 'Simpan' : 'Update'}
             </Button>
             <Button
               type="button"
               variant="secondary"
               onClick={onClose}
               className="flex-1"
+              disabled={uploading}
             >
               Batal
             </Button>
@@ -222,4 +347,5 @@ export const ProductForm: React.FC<ProductFormProps> = ({
     </div>
   )
 }
+
 

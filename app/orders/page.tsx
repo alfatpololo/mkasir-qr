@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
-import { Clock, ChefHat, Package, CheckCircle2 } from 'lucide-react'
+import { Clock, ChefHat, Package, CheckCircle2, Download, FileText } from 'lucide-react'
 import {
   subscribeToAllOrders,
   updateOrderStatus,
@@ -9,32 +9,33 @@ import {
 import { Order, OrderStatus } from '@/lib/types'
 import { formatCurrency } from '@/lib/utils'
 import { Button } from '@/components/Button'
+import { exportOrdersToExcel, exportOrdersToPDF } from '@/lib/export-utils'
 
 const statusConfig: Record<OrderStatus, { label: string; icon: React.ReactNode; color: string }> = {
   WAITING: {
     label: 'Menunggu',
     icon: <Clock className="w-4 h-4" />,
-    color: 'bg-yellow-100 text-yellow-800',
+    color: 'bg-gradient-to-r from-yellow-100 to-yellow-200 text-yellow-800',
   },
   PREPARING: {
     label: 'Menyiapkan',
     icon: <ChefHat className="w-4 h-4" />,
-    color: 'bg-blue-100 text-blue-800',
+    color: 'bg-gradient-to-r from-blue-100 to-blue-200 text-blue-800',
   },
   READY: {
     label: 'Siap',
     icon: <Package className="w-4 h-4" />,
-    color: 'bg-purple-100 text-purple-800',
+    color: 'bg-gradient-to-r from-purple-100 to-purple-200 text-purple-800',
   },
   WAITING_PAYMENT: {
     label: 'Menunggu Pembayaran',
     icon: <Clock className="w-4 h-4" />,
-    color: 'bg-orange-100 text-orange-800',
+    color: 'bg-gradient-to-r from-orange-100 to-orange-200 text-orange-800',
   },
   PAID: {
     label: 'Sudah Dibayar',
     icon: <CheckCircle2 className="w-4 h-4" />,
-    color: 'bg-green-100 text-green-800',
+    color: 'bg-gradient-to-r from-green-100 to-green-200 text-green-800',
   },
 }
 
@@ -69,25 +70,41 @@ export default function OrdersPage() {
   const uniqueTables = Array.from(new Set(orders.map((o) => o.tableNumber))).sort()
 
   return (
-    <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Pesanan</h1>
-        <p className="text-gray-600 mt-1">Kelola pesanan masuk</p>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-4xl font-bold bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 bg-clip-text text-transparent mb-2 flex items-center gap-3">
+            <span className="w-1 h-10 bg-gradient-to-b from-primary-500 to-primary-600 rounded-full"></span>
+            Pesanan
+          </h1>
+          <p className="text-gray-500 text-lg ml-4">Kelola pesanan masuk dari pelanggan</p>
+        </div>
+        <div className="flex gap-3">
+          <Button variant="secondary" onClick={() => exportOrdersToExcel(filteredOrders, 'pesanan')}>
+            <Download className="w-4 h-4" />
+            <span>Export Excel</span>
+          </Button>
+          <Button variant="primary" onClick={() => exportOrdersToPDF(filteredOrders, 'Laporan Pesanan')}>
+            <FileText className="w-4 h-4" />
+            <span>Export PDF</span>
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
-        <div className="flex flex-wrap gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+      <div className="bg-white rounded-3xl shadow-xl border border-gray-100 p-6">
+        <div className="flex flex-wrap gap-6">
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
               Status
             </label>
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value as OrderStatus | 'ALL')}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-gray-50 transition-all font-medium"
             >
-              <option value="ALL">Semua</option>
+              <option value="ALL">Semua Status</option>
               {Object.entries(statusConfig).map(([value, config]) => (
                 <option key={value} value={value}>
                   {config.label}
@@ -96,8 +113,8 @@ export default function OrdersPage() {
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-sm font-semibold text-gray-700 mb-2">
               Meja
             </label>
             <select
@@ -107,9 +124,9 @@ export default function OrdersPage() {
                   e.target.value === 'ALL' ? 'ALL' : parseInt(e.target.value)
                 )
               }
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-gray-50 transition-all font-medium"
             >
-              <option value="ALL">Semua</option>
+              <option value="ALL">Semua Meja</option>
               {uniqueTables.map((table) => (
                 <option key={table} value={table}>
                   Meja {table}
@@ -121,17 +138,30 @@ export default function OrdersPage() {
       </div>
 
       {/* Orders List */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="p-6 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">
-            Daftar Pesanan ({filteredOrders.length})
-          </h2>
+      <div className="bg-white rounded-3xl shadow-xl border border-gray-100 overflow-hidden backdrop-blur-sm">
+        <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-white via-gray-50/50 to-white">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <span className="w-1 h-6 bg-gradient-to-b from-primary-500 to-primary-600 rounded-full"></span>
+                Daftar Pesanan
+              </h2>
+              <p className="text-sm text-gray-500 mt-1 ml-3">Kelola status pesanan pelanggan</p>
+            </div>
+            <div className="px-4 py-2 bg-primary-50 rounded-xl border border-primary-100">
+              <span className="text-sm font-semibold text-primary-700">{filteredOrders.length} Pesanan</span>
+            </div>
+          </div>
         </div>
 
-        <div className="divide-y divide-gray-200">
+        <div className="divide-y divide-gray-50">
           {filteredOrders.length === 0 ? (
-            <div className="p-12 text-center">
-              <p className="text-gray-600">Tidak ada pesanan</p>
+            <div className="p-16 text-center">
+              <div className="w-24 h-24 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center mx-auto mb-6">
+                <Package className="w-12 h-12 text-gray-400" />
+              </div>
+              <p className="text-lg font-semibold text-gray-700 mb-2">Tidak ada pesanan</p>
+              <p className="text-sm text-gray-500">Pesanan akan muncul di sini</p>
             </div>
           ) : (
             filteredOrders.map((order) => {
@@ -139,22 +169,34 @@ export default function OrdersPage() {
               return (
                 <div
                   key={order.id}
-                  className="p-6 hover:bg-gray-50 transition-colors"
+                  className="p-6 hover:bg-gradient-to-r hover:from-primary-50/50 hover:to-transparent transition-all"
                 >
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <span className="font-bold text-lg">Meja {order.tableNumber}</span>
+                      <div className="flex items-center gap-3 mb-3">
+                        <span className="inline-flex items-center px-3 py-1 rounded-xl bg-gradient-to-r from-primary-100 to-primary-200 text-primary-800 font-bold text-lg">
+                          Meja {order.tableNumber}
+                        </span>
                         <span
-                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${status.color}`}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold shadow-sm ${
+                            order.status === 'PAID'
+                              ? 'bg-gradient-to-r from-green-100 to-green-200 text-green-800'
+                              : order.status === 'READY'
+                              ? 'bg-gradient-to-r from-purple-100 to-purple-200 text-purple-800'
+                              : order.status === 'WAITING_PAYMENT'
+                              ? 'bg-gradient-to-r from-orange-100 to-orange-200 text-orange-800'
+                              : order.status === 'PREPARING'
+                              ? 'bg-gradient-to-r from-blue-100 to-blue-200 text-blue-800'
+                              : 'bg-gradient-to-r from-yellow-100 to-yellow-200 text-yellow-800'
+                          }`}
                         >
                           {status.icon}
                           {status.label}
                         </span>
                       </div>
                       {order.customerName && (
-                        <div className="mb-1">
-                          <p className="text-sm font-medium text-gray-900">
+                        <div className="mb-2">
+                          <p className="text-sm font-semibold text-gray-900">
                             👤 {order.customerName}
                           </p>
                           {order.customerPhone && (
@@ -164,15 +206,15 @@ export default function OrdersPage() {
                           )}
                         </div>
                       )}
-                      <p className="text-sm text-gray-500">
+                      <p className="text-xs text-gray-500 mb-1">
                         Order ID: #{order.id.slice(0, 8)}
                       </p>
-                      <p className="text-sm text-gray-500">
+                      <p className="text-xs text-gray-500">
                         {order.createdAt?.toDate().toLocaleString('id-ID')}
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-xl font-bold text-primary-600">
+                      <p className="text-2xl font-bold text-gradient-green">
                         {formatCurrency(order.total)}
                       </p>
                     </div>

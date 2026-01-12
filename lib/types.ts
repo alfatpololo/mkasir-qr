@@ -38,6 +38,7 @@ export interface Order {
   tableNumber: number
   customerName?: string
   customerPhone?: string
+  customerEmail?: string // Email customer untuk tracking
   paymentMethod?: 'QRIS_RESTAURANT' | 'CASHIER' // QRIS_RESTAURANT = bayar di tempat, CASHIER = bayar ke kasir
   items: {
     productId: string
