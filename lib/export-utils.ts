@@ -2,6 +2,8 @@
 import * as XLSX from 'xlsx'
 // @ts-ignore - jspdf types
 import jsPDF from 'jspdf'
+// @ts-ignore - jspdf-autotable types
+import autoTable from 'jspdf-autotable'
 import { formatCurrency } from './utils'
 import { Order, Product } from './types'
 import { Customer } from './firestore'
@@ -128,10 +130,6 @@ export const exportCustomersToExcel = (customers: Customer[], orders: Order[], f
 // Export Orders to PDF
 export const exportOrdersToPDF = async (orders: Order[], title: string = 'Laporan Pesanan') => {
   try {
-    // Dynamic import untuk jspdf-autotable
-    const autoTableModule = await import('jspdf-autotable')
-    const autoTable = autoTableModule.default || (autoTableModule as any)
-    
     const doc = new jsPDF()
     
     // Title
@@ -152,8 +150,8 @@ export const exportOrdersToPDF = async (orders: Order[], title: string = 'Lapora
       order.createdAt?.toDate ? format(order.createdAt.toDate(), 'dd/MM/yyyy HH:mm', { locale: id }) : '-',
     ])
 
-    // Use autoTable if available
-    if (autoTable) {
+    // Use autoTable
+    try {
       autoTable(doc, {
         head: [['Order ID', 'Meja', 'Customer', 'Total', 'Status', 'Tanggal']],
         body: tableData,
@@ -161,7 +159,8 @@ export const exportOrdersToPDF = async (orders: Order[], title: string = 'Lapora
         styles: { fontSize: 8 },
         headStyles: { fillColor: [34, 197, 94] },
       })
-    } else {
+    } catch (autoTableError) {
+      // Fallback jika autoTable error
       // Fallback: simple text list
       let yPos = 40
       doc.setFontSize(10)
@@ -197,9 +196,6 @@ export const exportOrdersToPDF = async (orders: Order[], title: string = 'Lapora
 // Export Products to PDF
 export const exportProductsToPDF = async (products: Product[], title: string = 'Laporan Produk') => {
   try {
-    const autoTableModule = await import('jspdf-autotable')
-    const autoTable = autoTableModule.default || (autoTableModule as any)
-    
     const doc = new jsPDF()
     
     doc.setFontSize(18)
@@ -215,7 +211,7 @@ export const exportProductsToPDF = async (products: Product[], title: string = '
       product.isAvailable ? 'Ya' : 'Tidak',
     ])
 
-    if (autoTable) {
+    try {
       autoTable(doc, {
         head: [['Nama', 'Kategori', 'Harga', 'Stok', 'Tersedia']],
         body: tableData,
@@ -223,7 +219,7 @@ export const exportProductsToPDF = async (products: Product[], title: string = '
         styles: { fontSize: 8 },
         headStyles: { fillColor: [34, 197, 94] },
       })
-    } else {
+    } catch (autoTableError) {
       let yPos = 40
       doc.setFontSize(10)
       doc.text('Nama | Kategori | Harga | Stok | Tersedia', 14, yPos)
@@ -253,9 +249,6 @@ export const exportProductsToPDF = async (products: Product[], title: string = '
 // Export Customers to PDF
 export const exportCustomersToPDF = async (customers: Customer[], orders: Order[], title: string = 'Laporan Customer') => {
   try {
-    const autoTableModule = await import('jspdf-autotable')
-    const autoTable = autoTableModule.default || (autoTableModule as any)
-    
     const doc = new jsPDF()
     
     doc.setFontSize(18)
@@ -286,7 +279,7 @@ export const exportCustomersToPDF = async (customers: Customer[], orders: Order[
       ]
     })
 
-    if (autoTable) {
+    try {
       autoTable(doc, {
         head: [['Nama', 'Email', 'Phone', 'Total Pesanan', 'Total Belanja']],
         body: tableData,
@@ -294,7 +287,7 @@ export const exportCustomersToPDF = async (customers: Customer[], orders: Order[
         styles: { fontSize: 8 },
         headStyles: { fillColor: [34, 197, 94] },
       })
-    } else {
+    } catch (autoTableError) {
       let yPos = 40
       doc.setFontSize(10)
       doc.text('Nama | Email | Phone | Total Pesanan | Total Belanja', 14, yPos)
@@ -329,10 +322,6 @@ export const exportSalesReportToPDF = async (
   totalOrders: number
 ) => {
   try {
-    // Dynamic import untuk jspdf-autotable
-    const autoTableModule = await import('jspdf-autotable')
-    const autoTable = autoTableModule.default || (autoTableModule as any)
-    
     const doc = new jsPDF()
     
     // Title
@@ -367,8 +356,8 @@ export const exportSalesReportToPDF = async (
       order.createdAt?.toDate ? format(order.createdAt.toDate(), 'dd/MM/yyyy', { locale: id }) : '-',
     ])
 
-    // Use autoTable if available
-    if (autoTable) {
+    // Use autoTable
+    try {
       autoTable(doc, {
         head: [['Order ID', 'Meja', 'Total', 'Status', 'Tanggal']],
         body: tableData,
@@ -376,7 +365,7 @@ export const exportSalesReportToPDF = async (
         styles: { fontSize: 8 },
         headStyles: { fillColor: [34, 197, 94] },
       })
-    } else {
+    } catch (autoTableError) {
       // Fallback: simple text list
       let yPos = 80
       doc.setFontSize(10)

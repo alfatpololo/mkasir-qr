@@ -1,22 +1,29 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { Minus, Plus, X, ShoppingCart, Mail, User, Phone } from 'lucide-react'
 import { useCartStore } from '@/lib/cart-store'
 import { formatCurrency } from '@/lib/utils'
 import { Button } from '@/components/Button'
+import { User as FirebaseUser } from 'firebase/auth'
+import { getCustomerByEmail } from '@/lib/firestore'
 
 interface CartProps {
   onCheckout: (customerName: string, customerPhone: string, customerEmail: string, paymentMethod: 'QRIS_RESTAURANT' | 'CASHIER') => void
+  currentUser?: FirebaseUser | null
+  tableNumber: number
 }
 
-export const Cart: React.FC<CartProps> = ({ onCheckout }) => {
+export const Cart: React.FC<CartProps> = ({ onCheckout, currentUser, tableNumber }) => {
+  const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
   const [showCheckoutForm, setShowCheckoutForm] = useState(false)
   const [customerName, setCustomerName] = useState('')
   const [customerPhone, setCustomerPhone] = useState('')
   const [customerEmail, setCustomerEmail] = useState('')
   const [paymentMethod, setPaymentMethod] = useState<'QRIS_RESTAURANT' | 'CASHIER'>('QRIS_RESTAURANT')
+  const [loadingCustomerData, setLoadingCustomerData] = useState(false)
   const items = useCartStore((state) => state.items)
   const updateQuantity = useCartStore((state) => state.updateQuantity)
   const removeItem = useCartStore((state) => state.removeItem)
@@ -27,19 +34,71 @@ export const Cart: React.FC<CartProps> = ({ onCheckout }) => {
   const itemCount = getItemCount()
   const total = getTotal()
 
+  // Auto-fill form jika user sudah login
+  useEffect(() => {
+    if (currentUser) {
+      setCustomerName(currentUser.displayName || '')
+      setCustomerEmail(currentUser.email || '')
+      
+      // Coba ambil phone number dari Firestore customer data
+      if (currentUser.email) {
+        setLoadingCustomerData(true)
+        getCustomerByEmail(currentUser.email)
+          .then((customer) => {
+            if (customer?.phoneNumber) {
+              setCustomerPhone(customer.phoneNumber)
+            }
+          })
+          .catch(() => {
+            // Ignore error, phone akan tetap kosong
+          })
+          .finally(() => {
+            setLoadingCustomerData(false)
+          })
+      }
+    } else {
+      // Reset form jika user logout
+      setCustomerName('')
+      setCustomerPhone('')
+      setCustomerEmail('')
+    }
+  }, [currentUser])
+
   const handleCheckoutClick = () => {
-    setShowCheckoutForm(true)
+    // Redirect ke halaman checkout form
+    router.push(`/checkout/${tableNumber}`)
   }
 
-  const handleSubmitCheckout = () => {
+  const handleSubmitCheckout = (skipValidation = false) => {
+    // Jika user sudah login dan skipValidation=true, langsung checkout tanpa validasi
+    if (currentUser && skipValidation) {
+      if (!paymentMethod) {
+        alert('Mohon pilih metode pembayaran')
+        return
+      }
+      setIsOpen(false)
+      setShowCheckoutForm(false)
+      onCheckout(
+        customerName.trim(), 
+        customerPhone.trim() || '', 
+        customerEmail.trim(), 
+        paymentMethod
+      )
+      return
+    }
+    
+    // Validasi untuk semua user (baik yang sudah login maupun belum)
     if (!customerName.trim()) {
       alert('Mohon isi nama pembeli')
       return
     }
+    
+    // Nomor HP wajib diisi (baik user login maupun belum login)
     if (!customerPhone.trim()) {
       alert('Mohon isi nomor HP')
       return
     }
+    
     if (!customerEmail.trim()) {
       alert('Mohon isi email')
       return
@@ -56,10 +115,18 @@ export const Cart: React.FC<CartProps> = ({ onCheckout }) => {
     }
     setIsOpen(false)
     setShowCheckoutForm(false)
-    onCheckout(customerName.trim(), customerPhone.trim(), customerEmail.trim(), paymentMethod)
-    setCustomerName('')
-    setCustomerPhone('')
-    setCustomerEmail('')
+    onCheckout(
+      customerName.trim(), 
+      customerPhone.trim() || '', 
+      customerEmail.trim(), 
+      paymentMethod
+    )
+    // Reset form hanya jika bukan user yang sudah login
+    if (!currentUser) {
+      setCustomerName('')
+      setCustomerPhone('')
+      setCustomerEmail('')
+    }
     setPaymentMethod('QRIS_RESTAURANT')
   }
 
@@ -203,10 +270,25 @@ export const Cart: React.FC<CartProps> = ({ onCheckout }) => {
                     variant="primary"
                     className="w-full shadow-lg"
                     onClick={handleCheckoutClick}
+                    disabled={loadingCustomerData}
                   >
                     <ShoppingCart className="w-5 h-5" />
-                    <span>Checkout Sekarang</span>
+                    <span>
+                      {currentUser && customerName && customerEmail && customerPhone.trim()
+                        ? 'Checkout Sekarang (Data Otomatis)' 
+                        : 'Checkout Sekarang'}
+                    </span>
                   </Button>
+                  {currentUser && customerName && customerEmail && customerPhone.trim() && (
+                    <p className="text-xs text-center text-gray-500 mt-2">
+                      ✓ Data Anda sudah lengkap, checkout langsung tanpa form
+                    </p>
+                  )}
+                  {currentUser && customerName && customerEmail && !customerPhone.trim() && (
+                    <p className="text-xs text-center text-primary-600 mt-2">
+                      ⚠ Mohon lengkapi nomor HP untuk checkout langsung
+                    </p>
+                  )}
                 </>
               ) : (
                 <div className="space-y-4">
@@ -240,8 +322,14 @@ export const Cart: React.FC<CartProps> = ({ onCheckout }) => {
                         placeholder="08xxxxxxxxxx"
                         className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
                         required
+                        disabled={loadingCustomerData}
                       />
                     </div>
+                    {currentUser && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Mohon lengkapi nomor HP untuk melengkapi data Anda
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -305,9 +393,10 @@ export const Cart: React.FC<CartProps> = ({ onCheckout }) => {
                       Kembali
                     </Button>
                     <Button
+                      type="button"
                       variant="primary"
                       className="flex-1"
-                      onClick={handleSubmitCheckout}
+                      onClick={() => handleSubmitCheckout(false)}
                     >
                       Konfirmasi Pesanan
                     </Button>

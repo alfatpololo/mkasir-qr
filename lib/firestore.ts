@@ -407,8 +407,14 @@ export const createOrUpdateCustomer = async (
   photoURL?: string
 ): Promise<void> => {
   const customersRef = collection(db, 'customers')
-  const q = query(customersRef, where('uid', '==', uid))
-  const snapshot = await getDocs(q)
+  
+  // Cari berdasarkan email juga (untuk integrasi Google + Manual)
+  const qByEmail = query(customersRef, where('email', '==', email))
+  const snapshotByEmail = await getDocs(qByEmail)
+  
+  // Cari berdasarkan UID juga
+  const qByUid = query(customersRef, where('uid', '==', uid))
+  const snapshotByUid = await getDocs(qByUid)
   
   const customerData: any = {
     uid,
@@ -422,16 +428,19 @@ export const createOrUpdateCustomer = async (
     customerData.phoneNumber = phoneNumber
   }
   
-  if (snapshot.empty) {
+  // Jika sudah ada berdasarkan email atau UID, update
+  if (!snapshotByEmail.empty) {
+    const docRef = snapshotByEmail.docs[0].ref
+    await updateDoc(docRef, customerData)
+  } else if (!snapshotByUid.empty) {
+    const docRef = snapshotByUid.docs[0].ref
+    await updateDoc(docRef, customerData)
+  } else {
     // Create new customer
     await addDoc(customersRef, {
       ...customerData,
       createdAt: Timestamp.now(),
     })
-  } else {
-    // Update existing customer
-    const docRef = snapshot.docs[0].ref
-    await updateDoc(docRef, customerData)
   }
 }
 

@@ -51,14 +51,36 @@ function LoginForm() {
           setLoading(false)
           return
         }
-        await signUpCustomer(
-          formData.email,
-          formData.password,
-          formData.displayName,
-          formData.phoneNumber || undefined
-        )
-        // Redirect to profile page
-        router.push('/profile')
+        if (!formData.phoneNumber.trim()) {
+          setError('Nomor HP harus diisi')
+          setLoading(false)
+          return
+        }
+        try {
+          await signUpCustomer(
+            formData.email,
+            formData.password,
+            formData.displayName,
+            formData.phoneNumber
+          )
+          // Redirect to profile page
+          router.push('/profile')
+        } catch (signUpError: any) {
+          // Jika email sudah terdaftar dengan Google, tawarkan login dengan Google
+          if (signUpError.message === 'EMAIL_REGISTERED_WITH_GOOGLE') {
+            const useGoogle = confirm(
+              'Email ini sudah terdaftar dengan Google.\n\nApakah Anda ingin login dengan Google?'
+            )
+            if (useGoogle) {
+              await handleGoogleSignIn()
+              return
+            } else {
+              setError('Email sudah terdaftar dengan Google. Silakan login dengan Google atau gunakan email lain.')
+            }
+          } else {
+            throw signUpError
+          }
+        }
       }
     } catch (err: any) {
       setError(err.message || 'Terjadi kesalahan')
@@ -163,7 +185,7 @@ function LoginForm() {
 
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Nomor HP
+                  Nomor HP *
                 </label>
                 <div className="relative">
                   <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -173,6 +195,7 @@ function LoginForm() {
                     onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })}
                     placeholder="08xxxxxxxxxx"
                     className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    required={!isLogin}
                   />
                 </div>
               </div>

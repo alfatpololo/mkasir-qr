@@ -6,6 +6,7 @@ import { LogOut, User, Mail, Phone, Package, Calendar, DollarSign } from 'lucide
 import { Button } from '@/components/Button'
 import { signOutCustomer, onAuthStateChange, getCurrentUser } from '@/lib/auth'
 import { subscribeToCustomerOrders, getCustomerStats } from '@/lib/customer-firestore'
+import { getCustomerByEmail } from '@/lib/firestore'
 import { Order } from '@/lib/types'
 import { formatCurrency } from '@/lib/utils'
 import Image from 'next/image'
@@ -36,7 +37,7 @@ export default function ProfilePage() {
   }, [])
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChange((currentUser) => {
+    const unsubscribe = onAuthStateChange(async (currentUser) => {
       if (!currentUser) {
         router.push('/login')
         return
@@ -44,17 +45,45 @@ export default function ProfilePage() {
       
       setUser(currentUser)
       
-      // Get customer orders
+      // Get customer data from Firestore to get phone number
       const email = currentUser.email || ''
-      const phone = (currentUser as any).phoneNumber || undefined
+      let phone: string | undefined = undefined
+      
+      // Try to get phone from Firestore customer data
+      if (email) {
+        try {
+          const customerData = await getCustomerByEmail(email)
+          if (customerData?.phoneNumber) {
+            phone = customerData.phoneNumber
+          }
+        } catch (error) {
+          console.error('Error getting customer data:', error)
+        }
+      }
+      
+      // Fallback to Firebase Auth phone if available
+      if (!phone && (currentUser as any).phoneNumber) {
+        phone = (currentUser as any).phoneNumber
+      }
+      
+      console.log('Profile: Loading orders for email:', email, 'phone:', phone)
       
       const unsubscribeOrders = subscribeToCustomerOrders(email, phone, (ordersData) => {
+        console.log('Profile: Orders received:', ordersData.length)
         setOrders(ordersData)
         setLoading(false)
+        
+        // Update stats when orders change
+        getCustomerStats(email, phone).then((newStats) => {
+          console.log('Profile: Stats updated:', newStats)
+          setStats(newStats)
+        })
       })
       
-      // Get stats
-      getCustomerStats(email, phone).then(setStats)
+      // Get initial stats
+      const initialStats = await getCustomerStats(email, phone)
+      console.log('Profile: Initial stats:', initialStats)
+      setStats(initialStats)
       
       return () => unsubscribeOrders()
     })
@@ -138,7 +167,7 @@ export default function ProfilePage() {
         <div className="max-w-md mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
-              onClick={() => router.back()}
+              onClick={() => router.push('/menu/1')}
               className="p-2 hover:bg-white/10 rounded-lg transition-colors"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

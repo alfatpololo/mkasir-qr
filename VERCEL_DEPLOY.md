@@ -50,15 +50,26 @@ NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID=G-EGQD7MZT7P
 
 3. Klik **"Deploy"**
 
-### 4. **Update Firebase Authorized Domains**
+### 4. **⚠️ PENTING: Update Firebase Authorized Domains**
+
+**WAJIB dilakukan setelah deploy!** Tanpa ini, Google Login akan error dengan pesan "auth/unauthorized-domain".
 
 Setelah deploy, tambahkan domain Vercel ke Firebase:
 
-1. Buka Firebase Console → Authentication → Settings
-2. Scroll ke **"Authorized domains"**
-3. Klik **"Add domain"**
-4. Masukkan domain Vercel Anda: `your-app.vercel.app`
-5. Klik **"Add"**
+1. Buka https://console.firebase.google.com/
+2. Pilih project **qr-mkasir**
+3. Klik menu **Authentication** di sidebar kiri
+4. Klik tab **Settings** (ikon gear ⚙️)
+5. Scroll ke bawah ke bagian **"Authorized domains"**
+6. Klik tombol **"Add domain"**
+7. Masukkan domain Vercel Anda: `your-app.vercel.app` (ganti dengan domain Anda yang sebenarnya)
+8. Klik **"Add"**
+9. **Tunggu beberapa detik** - perubahan langsung aktif (tidak perlu restart)
+
+**💡 Tips:**
+- Jika pakai custom domain, tambahkan juga domain custom Anda
+- Domain harus exact match (termasuk `www` atau tidak)
+- Lihat file `FIX_GOOGLE_AUTH.md` untuk panduan lengkap troubleshooting
 
 ### 5. **Update Firestore Rules (Jika Perlu)**
 

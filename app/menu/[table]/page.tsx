@@ -534,7 +534,7 @@ export default function MenuPage() {
         </div>
       )}
 
-      <Cart onCheckout={handleCheckout} />
+      <Cart onCheckout={handleCheckout} currentUser={currentUser} tableNumber={tableNumber} />
     </div>
   )
 }

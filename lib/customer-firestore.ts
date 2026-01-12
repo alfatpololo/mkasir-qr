@@ -20,20 +20,23 @@ import { Order } from './types'
 export async function getCustomerOrders(customerEmail: string, customerPhone?: string): Promise<Order[]> {
   try {
     const ordersRef = collection(db, 'orders')
-    let q = query(ordersRef, orderBy('createdAt', 'desc'))
     
-    // Filter by email or phone
-    if (customerEmail) {
-      q = query(ordersRef, where('customerEmail', '==', customerEmail), orderBy('createdAt', 'desc'))
-    } else if (customerPhone) {
-      q = query(ordersRef, where('customerPhone', '==', customerPhone), orderBy('createdAt', 'desc'))
-    }
-    
-    const snapshot = await getDocs(q)
-    return snapshot.docs.map(doc => ({
+    // Get all orders and filter client-side to avoid Firestore index issues
+    const snapshot = await getDocs(query(ordersRef, orderBy('createdAt', 'desc')))
+    const allOrders = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     } as Order))
+    
+    // Filter orders by email or phone
+    const customerOrders = allOrders.filter(order => {
+      const emailMatch = customerEmail && order.customerEmail === customerEmail
+      const phoneMatch = customerPhone && order.customerPhone === customerPhone
+      return emailMatch || phoneMatch
+    })
+    
+    console.log('Customer orders found:', customerOrders.length, 'for email:', customerEmail, 'phone:', customerPhone)
+    return customerOrders
   } catch (error) {
     console.error('Error getting customer orders:', error)
     return []
@@ -49,25 +52,33 @@ export function subscribeToCustomerOrders(
   callback: (orders: Order[]) => void
 ): () => void {
   const ordersRef = collection(db, 'orders')
-  let q = query(ordersRef, orderBy('createdAt', 'desc'))
   
-  // Try to filter by email first, then phone
-  if (customerEmail) {
-    q = query(ordersRef, where('customerEmail', '==', customerEmail), orderBy('createdAt', 'desc'))
-  } else if (customerPhone) {
-    q = query(ordersRef, where('customerPhone', '==', customerPhone), orderBy('createdAt', 'desc'))
-  }
+  // Subscribe to all orders and filter client-side to avoid Firestore index issues
+  const unsubscribe = onSnapshot(
+    query(ordersRef, orderBy('createdAt', 'desc')),
+    (snapshot) => {
+      const allOrders = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      } as Order))
+      
+      // Filter orders by email or phone
+      const customerOrders = allOrders.filter(order => {
+        const emailMatch = customerEmail && order.customerEmail === customerEmail
+        const phoneMatch = customerPhone && order.customerPhone === customerPhone
+        return emailMatch || phoneMatch
+      })
+      
+      console.log('Customer orders found:', customerOrders.length, 'for email:', customerEmail, 'phone:', customerPhone)
+      callback(customerOrders)
+    },
+    (error) => {
+      console.error('Error subscribing to customer orders:', error)
+      callback([])
+    }
+  )
   
-  return onSnapshot(q, (snapshot) => {
-    const orders = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    } as Order))
-    callback(orders)
-  }, (error) => {
-    console.error('Error subscribing to customer orders:', error)
-    callback([])
-  })
+  return unsubscribe
 }
 
 /**
