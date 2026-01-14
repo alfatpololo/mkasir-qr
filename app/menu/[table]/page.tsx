@@ -8,8 +8,6 @@ import { MenuList } from './MenuList'
 import { Cart } from './Cart'
 import { OrderStatusComponent } from '@/components/OrderStatus'
 import { useCartStore } from '@/lib/cart-store'
-import { getTable, subscribeToTable } from '@/lib/firestore'
-import { Table } from '@/lib/types'
 import { createOrder } from '@/lib/firestore'
 import { formatCurrency } from '@/lib/utils'
 import { Button } from '@/components/Button'
@@ -18,14 +16,16 @@ import { getCurrentUser, onAuthStateChange } from '@/lib/auth'
 export default function MenuPage() {
   const params = useParams()
   const router = useRouter()
-  const tableNumber = parseInt(params.table as string)
+  const paramValueRaw = (params as any).table
+  const rawParam = Array.isArray(paramValueRaw) ? paramValueRaw[0] : (paramValueRaw as string)
+  const isNumericOnly = /^\d+$/.test(rawParam)
+  const tableNumber = isNumericOnly ? parseInt(rawParam, 10) : 0
+  const isTokenMode = !isNumericOnly
   
-  const [table, setTable] = useState<Table | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null)
   const [showOrderStatus, setShowOrderStatus] = useState(false)
-  const [scrolled, setScrolled] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [showFilter, setShowFilter] = useState(false)
@@ -39,71 +39,25 @@ export default function MenuPage() {
   const getTotal = useCartStore((state) => state.getTotal)
   const clearCart = useCartStore((state) => state.clearCart)
 
-  // Handle scroll for header
+  // Mode lama (numerik) masih pakai nomor meja untuk order, 
+  // tapi mode token tidak lagi bergantung pada data meja di Firebase.
   useEffect(() => {
-    const handleScroll = () => {
-      setScrolled(window.scrollY > 10)
+    // Mode token: lewati validasi meja Firebase
+    if (isTokenMode) {
+      setLoading(false)
+      return
     }
-    window.addEventListener('scroll', handleScroll)
-    return () => window.removeEventListener('scroll', handleScroll)
-  }, [])
 
-  // Validate table number
-  useEffect(() => {
-    if (isNaN(tableNumber) || tableNumber < 1 || tableNumber > 20) {
+    // Mode nomor meja lama
+    if (tableNumber < 1 || tableNumber > 20) {
       setError('Nomor meja tidak valid')
       setLoading(false)
       return
     }
 
-    // Set table number in cart store
     setTableNumber(tableNumber)
-
-    // Check table exists
-    const checkTable = async () => {
-      try {
-        const tableData = await getTable(tableNumber)
-        if (!tableData) {
-          setError(`Meja ${tableNumber} tidak ditemukan`)
-          setLoading(false)
-          return
-        }
-        
-        if (!tableData.active) {
-          setError(`Meja ${tableNumber} tidak aktif`)
-          setLoading(false)
-          return
-        }
-
-        setTable(tableData)
-        setLoading(false)
-      } catch (err) {
-        setError('Terjadi kesalahan saat memuat data meja')
-        setLoading(false)
-      }
-    }
-
-    checkTable()
-
-    // Subscribe to table changes
-    const unsubscribe = subscribeToTable(tableNumber, (tableData) => {
-      if (tableData) {
-        setTable(tableData)
-        if (!tableData.active) {
-          setError(`Meja ${tableNumber} tidak aktif`)
-        }
-      }
-    })
-
-    return () => unsubscribe()
-  }, [tableNumber, setTableNumber])
-
-  // Store table number in localStorage
-  useEffect(() => {
-    if (tableNumber && typeof window !== 'undefined') {
-      localStorage.setItem('currentTable', tableNumber.toString())
-    }
-  }, [tableNumber])
+    setLoading(false)
+  }, [tableNumber, setTableNumber, isTokenMode])
 
   // Check if mobile device
   useEffect(() => {
@@ -117,21 +71,12 @@ export default function MenuPage() {
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
-  // Check auth state
+  // Check auth state (untuk tombol login/profil)
   useEffect(() => {
     const unsubscribe = onAuthStateChange((user) => {
       setCurrentUser(user)
     })
     return () => unsubscribe()
-  }, [])
-
-  // Handle scroll for header
-  useEffect(() => {
-    const handleScroll = () => {
-      setScrolled(window.scrollY > 10)
-    }
-    window.addEventListener('scroll', handleScroll)
-    return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
   const handleCheckout = async (
@@ -152,7 +97,8 @@ export default function MenuPage() {
       }
 
       // Validate data before sending
-      if (!tableNumber || tableNumber <= 0) {
+      // Untuk mode token, tableNumber boleh 0 (tidak diketahui dari URL)
+      if (!isTokenMode && (!tableNumber || tableNumber <= 0)) {
         alert('Nomor meja tidak valid')
         return
       }
@@ -202,7 +148,7 @@ export default function MenuPage() {
       }
 
       console.log('Creating order with validated data:', {
-        tableNumber,
+        tableNumber: isTokenMode ? 0 : tableNumber,
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         customerEmail: customerEmail.trim(),
@@ -213,7 +159,7 @@ export default function MenuPage() {
       })
 
       const orderId = await createOrder({
-        tableNumber,
+        tableNumber: isTokenMode ? 0 : tableNumber,
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         customerEmail: customerEmail.trim(),
@@ -254,15 +200,8 @@ export default function MenuPage() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
-      </div>
-    )
-  }
-
-  if (error || !table) {
+  // Untuk mode meja lama, tetap tampilkan error jika nomor meja tidak valid
+  if (!isTokenMode && (loading || error)) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="max-w-md w-full bg-white rounded-lg shadow-sm border border-gray-200 p-6 text-center">
@@ -296,7 +235,7 @@ export default function MenuPage() {
           </div>
           <OrderStatusComponent
             orderId={currentOrderId}
-            tableNumber={tableNumber}
+            tableNumber={isTokenMode ? 0 : tableNumber}
             onPaymentClick={handlePaymentClick}
           />
         </div>
@@ -409,7 +348,9 @@ export default function MenuPage() {
               {/* Content di Tengah */}
               <div className="relative h-full flex flex-col items-center justify-center z-[2]">
                 <span className="text-xs font-semibold text-white uppercase tracking-wider mb-1 drop-shadow-lg">Meja</span>
-                <span className="text-3xl font-bold text-white drop-shadow-lg">{tableNumber}</span>
+                <span className="text-3xl font-bold text-white drop-shadow-lg">
+                  {isTokenMode ? '-' : tableNumber}
+                </span>
               </div>
             </div>
           </div>
@@ -461,6 +402,7 @@ export default function MenuPage() {
       </div>
 
       <MenuList 
+        token={rawParam}
         searchQuery={showSearch ? searchQuery : ''} 
         filterCategory={filterCategory}
         onCategoriesReady={setAvailableCategories}
@@ -546,7 +488,11 @@ export default function MenuPage() {
         </div>
       )}
 
-      <Cart onCheckout={handleCheckout} currentUser={currentUser} tableNumber={tableNumber} />
+      <Cart
+        onCheckout={handleCheckout}
+        currentUser={currentUser}
+        tableNumber={isTokenMode ? 0 : tableNumber}
+      />
     </div>
   )
 }
