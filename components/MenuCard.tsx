@@ -26,7 +26,7 @@ export const MenuCard: React.FC<MenuCardProps> = ({ product }) => {
   }
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-lg transition-all duration-300 group active:scale-[0.98]">
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-lg transition-all duration-300 group active:scale-[0.98]">
       <div className="relative aspect-square bg-gray-50 overflow-hidden">
         {product.image || product.imageUrl ? (
           <img
@@ -37,7 +37,7 @@ export const MenuCard: React.FC<MenuCardProps> = ({ product }) => {
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
             <div className="text-center">
-              <div className="w-20 h-20 mx-auto mb-2 rounded-2xl bg-white shadow-md flex items-center justify-center">
+              <div className="w-20 h-20 mx-auto mb-2 rounded-xl bg-white shadow-md flex items-center justify-center">
                 <span className="text-4xl">🍽️</span>
               </div>
               <p className="text-xs text-gray-400 font-medium">No Image</p>
@@ -66,13 +66,13 @@ export const MenuCard: React.FC<MenuCardProps> = ({ product }) => {
         
         <Button
           variant="primary"
-          size="sm"
-          className="w-full"
+          size="md"
+          className="w-full py-3"
           onClick={handleAddToCart}
           disabled={isOutOfStock}
         >
-          <Plus className="w-4 h-4" />
-          <span>Tambah</span>
+          <Plus className="w-5 h-5" />
+          <span className="font-semibold">Tambah</span>
         </Button>
       </div>
     </div>

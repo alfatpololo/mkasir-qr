@@ -21,7 +21,7 @@ export const CategoryTabs: React.FC<CategoryTabsProps> = ({
         <button
           onClick={() => onCategoryChange(null)}
           className={cn(
-            'px-5 py-2.5 rounded-full whitespace-nowrap font-semibold text-sm transition-all duration-200 shadow-sm',
+            'px-5 py-2.5 rounded-xl whitespace-nowrap font-semibold text-sm transition-all duration-200 shadow-sm',
             activeCategory === null
               ? 'bg-primary-600 text-white shadow-md scale-105'
               : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-200'
@@ -34,7 +34,7 @@ export const CategoryTabs: React.FC<CategoryTabsProps> = ({
             key={category}
             onClick={() => onCategoryChange(category)}
             className={cn(
-              'px-5 py-2.5 rounded-full whitespace-nowrap font-semibold text-sm transition-all duration-200 shadow-sm',
+              'px-5 py-2.5 rounded-xl whitespace-nowrap font-semibold text-sm transition-all duration-200 shadow-sm',
               activeCategory === category
                 ? 'bg-primary-600 text-white shadow-md scale-105'
                 : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-200'

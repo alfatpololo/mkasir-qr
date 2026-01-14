@@ -173,8 +173,8 @@ export const Cart: React.FC<CartProps> = ({ onCheckout, currentUser, tableNumber
                 </p>
               </div>
             </div>
-            <Button variant="primary" size="sm" className="shadow-md">
-              Lihat Keranjang
+            <Button variant="primary" size="md" className="shadow-md px-6 py-3">
+              <span className="font-semibold">Lihat Keranjang</span>
             </Button>
           </button>
         </div>
@@ -183,7 +183,7 @@ export const Cart: React.FC<CartProps> = ({ onCheckout, currentUser, tableNumber
       {/* Cart Modal */}
       {isOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end">
-          <div className="bg-white w-full max-h-[85vh] rounded-t-3xl overflow-hidden flex flex-col shadow-2xl border-t-4 border-primary-500">
+          <div className="bg-white w-full max-h-[85vh] rounded-t-2xl overflow-hidden flex flex-col shadow-2xl border-t-4 border-primary-500">
             {/* Header */}
             <div className="p-6 border-b border-gray-100 bg-gradient-to-r from-primary-50/50 to-white flex items-center justify-between">
               <div>
@@ -227,14 +227,14 @@ export const Cart: React.FC<CartProps> = ({ onCheckout, currentUser, tableNumber
                     <div className="flex items-center gap-2 bg-white rounded-xl border border-gray-200 p-1 shadow-sm">
                       <button
                         onClick={() => updateQuantity(item.productId, item.qty - 1)}
-                        className="p-2 bg-gray-100 rounded-lg hover:bg-primary-100 hover:text-primary-600 transition-all"
+                        className="p-2 bg-gray-100 rounded-xl hover:bg-primary-100 hover:text-primary-600 transition-all"
                       >
                         <Minus className="w-4 h-4" />
                       </button>
                       <span className="font-bold w-8 text-center text-gray-900">{item.qty}</span>
                       <button
                         onClick={() => updateQuantity(item.productId, item.qty + 1)}
-                        className="p-2 bg-gray-100 rounded-lg hover:bg-primary-100 hover:text-primary-600 transition-all"
+                        className="p-2 bg-gray-100 rounded-xl hover:bg-primary-100 hover:text-primary-600 transition-all"
                       >
                         <Plus className="w-4 h-4" />
                       </button>
@@ -303,7 +303,7 @@ export const Cart: React.FC<CartProps> = ({ onCheckout, currentUser, tableNumber
                         value={customerName}
                         onChange={(e) => setCustomerName(e.target.value)}
                         placeholder="Masukkan nama pembeli"
-                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
                         required
                         autoFocus
                       />
@@ -320,7 +320,7 @@ export const Cart: React.FC<CartProps> = ({ onCheckout, currentUser, tableNumber
                         value={customerPhone}
                         onChange={(e) => setCustomerPhone(e.target.value)}
                         placeholder="08xxxxxxxxxx"
-                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
                         required
                         disabled={loadingCustomerData}
                       />
@@ -342,7 +342,7 @@ export const Cart: React.FC<CartProps> = ({ onCheckout, currentUser, tableNumber
                         value={customerEmail}
                         onChange={(e) => setCustomerEmail(e.target.value)}
                         placeholder="email@example.com"
-                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
                         required
                       />
                     </div>
@@ -352,7 +352,7 @@ export const Cart: React.FC<CartProps> = ({ onCheckout, currentUser, tableNumber
                       Metode Pembayaran *
                     </label>
                     <div className="space-y-2">
-                      <label className="flex items-center p-3 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+                      <label className="flex items-center p-3 border-2 rounded-xl cursor-pointer hover:bg-gray-50 transition-colors"
                         style={{ borderColor: paymentMethod === 'QRIS_RESTAURANT' ? '#0ea5e9' : '#e5e7eb' }}>
                         <input
                           type="radio"
@@ -367,7 +367,7 @@ export const Cart: React.FC<CartProps> = ({ onCheckout, currentUser, tableNumber
                           <div className="text-xs text-gray-500">Scan QR code resto untuk pembayaran</div>
                         </div>
                       </label>
-                      <label className="flex items-center p-3 border-2 rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+                      <label className="flex items-center p-3 border-2 rounded-xl cursor-pointer hover:bg-gray-50 transition-colors"
                         style={{ borderColor: paymentMethod === 'CASHIER' ? '#0ea5e9' : '#e5e7eb' }}>
                         <input
                           type="radio"
