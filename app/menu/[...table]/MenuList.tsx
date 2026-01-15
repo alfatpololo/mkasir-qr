@@ -161,8 +161,19 @@ export const MenuList: React.FC<MenuListProps> = ({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center p-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+      <div className="max-w-md mx-auto px-4 pb-6">
+        <div className="grid grid-cols-2 gap-3">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden animate-pulse">
+              <div className="aspect-square bg-gray-200" />
+              <div className="p-4 space-y-3">
+                <div className="h-4 bg-gray-200 rounded w-3/4" />
+                <div className="h-6 bg-gray-200 rounded w-1/2" />
+                <div className="h-10 bg-gray-200 rounded" />
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     )
   }
@@ -183,14 +194,16 @@ export const MenuList: React.FC<MenuListProps> = ({
         onCategoryChange={setActiveCategory}
       />
 
-      <div className="px-4 pb-6">
+      <div className="px-4 pb-28">
         {filteredProducts.length === 0 ? (
           <div className="text-center py-20">
             <div className="w-24 h-24 mx-auto mb-5 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center shadow-lg">
               <span className="text-5xl">🍽️</span>
             </div>
             <p className="text-gray-700 font-semibold text-lg mb-1">Tidak ada produk tersedia</p>
-            <p className="text-sm text-gray-400">Coba pilih kategori lain</p>
+            <p className="text-sm text-gray-400">
+              {isFilteredView ? 'Coba ubah filter atau pencarian' : 'Coba pilih kategori lain'}
+            </p>
           </div>
         ) : (
           <>

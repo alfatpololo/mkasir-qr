@@ -163,6 +163,9 @@ export const createOrder = async (order: Omit<Order, 'id' | 'createdAt'>): Promi
     if (order.paymentMethod !== undefined && order.paymentMethod !== null) {
       cleanOrder.paymentMethod = order.paymentMethod
     }
+    if (order.orderNote !== undefined && order.orderNote !== null && order.orderNote.trim() !== '') {
+      cleanOrder.orderNote = order.orderNote.trim()
+    }
 
     // Final validation
     if (!cleanOrder.tableNumber || !cleanOrder.items || cleanOrder.items.length === 0) {

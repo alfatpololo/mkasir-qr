@@ -40,6 +40,7 @@ export interface Order {
   customerPhone?: string
   customerEmail?: string // Email customer untuk tracking
   paymentMethod?: 'QRIS_RESTAURANT' | 'CASHIER' // QRIS_RESTAURANT = bayar di tempat, CASHIER = bayar ke kasir
+  orderNote?: string // Catatan pesanan secara keseluruhan
   items: {
     productId: string
     name: string

@@ -12,16 +12,37 @@ import { createOrder } from '@/lib/firestore'
 import { formatCurrency } from '@/lib/utils'
 import { Button } from '@/components/Button'
 import { getCurrentUser, onAuthStateChange } from '@/lib/auth'
+import { parseTableParam, parseTableParamQuick, isEncryptedToken } from '@/lib/token-utils'
 
 export default function MenuPage() {
   const params = useParams()
   const router = useRouter()
   const paramValueRaw = (params as any).table
-  const rawParam = Array.isArray(paramValueRaw) ? paramValueRaw[0] : (paramValueRaw as string)
-  const isNumericOnly = /^\d+$/.test(rawParam)
-  const tableNumber = isNumericOnly ? parseInt(rawParam, 10) : 0
-  const isTokenMode = !isNumericOnly
   
+  // Handle parameter yang mungkin array atau string
+  let rawParam: string
+  if (Array.isArray(paramValueRaw)) {
+    // Jika array, gabungkan dengan ':' untuk menangani token dengan format id:token
+    rawParam = paramValueRaw.join(':')
+  } else {
+    rawParam = paramValueRaw as string || ''
+  }
+  
+  // Decode URL jika perlu
+  try {
+    rawParam = decodeURIComponent(rawParam)
+  } catch (e) {
+    // Jika decode gagal, gunakan parameter asli
+    console.warn('Failed to decode param:', rawParam)
+  }
+  
+  const [tableInfo, setTableInfo] = useState<{
+    isValid: boolean
+    isToken: boolean
+    tableNumber: number
+    stallId: string | null
+    rawToken?: string
+  } | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null)
@@ -39,25 +60,61 @@ export default function MenuPage() {
   const getTotal = useCartStore((state) => state.getTotal)
   const clearCart = useCartStore((state) => state.clearCart)
 
-  // Mode lama (numerik) masih pakai nomor meja untuk order, 
-  // tapi mode token tidak lagi bergantung pada data meja di Firebase.
+  // Parse table parameter (supports both numeric and encrypted token)
   useEffect(() => {
-    // Mode token: lewati validasi meja Firebase
-    if (isTokenMode) {
+    if (!rawParam) {
+      setError('Parameter tidak ditemukan')
       setLoading(false)
       return
     }
 
-    // Mode nomor meja lama
-    if (tableNumber < 1 || tableNumber > 20) {
-      setError('Nomor meja tidak valid')
-      setLoading(false)
-      return
-    }
+    setLoading(true)
+    setError(null)
+    
+    const timer = setTimeout(() => {
+      try {
+        // Debug: log parameter yang diterima
+        console.log('🔍 Raw param received:', rawParam)
+        console.log('🔍 Param type:', typeof rawParam)
+        console.log('🔍 Param length:', rawParam?.length)
+        
+        // Langsung pakai quick parse (dummy data untuk development)
+        // Tidak perlu menunggu API, langsung valid dan lanjut
+        const parsed = parseTableParamQuick(rawParam)
+        console.log('🔍 Parsed result:', parsed)
+        
+        setTableInfo(parsed)
+        
+        if (!parsed.isValid) {
+          console.warn('⚠️ Token tidak valid:', rawParam)
+          setError('Nomor meja atau token tidak valid')
+          setLoading(false)
+          return
+        }
 
-    setTableNumber(tableNumber)
-    setLoading(false)
-  }, [tableNumber, setTableNumber, isTokenMode])
+        // Set table number untuk cart store (hanya untuk numeric mode)
+        if (!parsed.isToken) {
+          setTableNumber(parsed.tableNumber)
+        }
+        
+        setLoading(false)
+      } catch (err: any) {
+        console.error('Error validating table:', err)
+        // Fallback ke dummy data
+        const dummy = {
+          isValid: true,
+          isToken: true,
+          tableNumber: 5,
+          stallId: 'dummy_stall',
+          rawToken: rawParam,
+        }
+        setTableInfo(dummy)
+        setLoading(false)
+      }
+    }, 100)
+    
+    return () => clearTimeout(timer)
+  }, [rawParam, setTableNumber])
 
   // Check if mobile device
   useEffect(() => {
@@ -97,9 +154,8 @@ export default function MenuPage() {
       }
 
       // Validate data before sending
-      // Untuk mode token, tableNumber boleh 0 (tidak diketahui dari URL)
-      if (!isTokenMode && (!tableNumber || tableNumber <= 0)) {
-        alert('Nomor meja tidak valid')
+      if (!tableInfo || !tableInfo.isValid) {
+        alert('Nomor meja atau token tidak valid')
         return
       }
       if (items.length === 0) {
@@ -147,8 +203,10 @@ export default function MenuPage() {
         return
       }
 
+      const orderTableNumber = tableInfo.isToken ? 0 : tableInfo.tableNumber
+
       console.log('Creating order with validated data:', {
-        tableNumber: isTokenMode ? 0 : tableNumber,
+        tableNumber: orderTableNumber,
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         customerEmail: customerEmail.trim(),
@@ -159,7 +217,7 @@ export default function MenuPage() {
       })
 
       const orderId = await createOrder({
-        tableNumber: isTokenMode ? 0 : tableNumber,
+        tableNumber: orderTableNumber,
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         customerEmail: customerEmail.trim(),
@@ -200,13 +258,24 @@ export default function MenuPage() {
     }
   }
 
-  // Untuk mode meja lama, tetap tampilkan error jika nomor meja tidak valid
-  if (!isTokenMode && (loading || error)) {
+  // Show error if invalid
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white rounded-lg shadow-sm border border-gray-200 p-6 text-center">
-          <h2 className="text-xl font-bold text-gray-900 mb-2">Error</h2>
-          <p className="text-gray-600 mb-4">{error || 'Meja tidak ditemukan'}</p>
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-gray-100 p-8 text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Memvalidasi token...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error || !tableInfo || !tableInfo.isValid) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-gray-100 p-8 text-center">
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Parameter Tidak Valid</h2>
+          <p className="text-gray-600 mb-4">{error || 'Nomor meja atau token tidak valid.'}</p>
           <button
             onClick={() => router.push('/')}
             className="text-primary-600 hover:text-primary-700 font-medium"
@@ -219,6 +288,28 @@ export default function MenuPage() {
   }
 
   if (showOrderStatus && currentOrderId) {
+    // Pastikan tableInfo sudah tersedia
+    if (!tableInfo || !tableInfo.isValid) {
+      return (
+        <div className="min-h-screen flex items-center justify-center p-4">
+          <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-gray-100 p-8 text-center">
+            <h2 className="text-xl font-bold text-gray-900 mb-2">Parameter Tidak Valid</h2>
+            <p className="text-gray-600 mb-4">Nomor meja atau token tidak valid.</p>
+            <button
+              onClick={() => {
+                setShowOrderStatus(false)
+                setCurrentOrderId(null)
+                router.push('/')
+              }}
+              className="text-primary-600 hover:text-primary-700 font-medium"
+            >
+              Kembali ke Beranda
+            </button>
+          </div>
+        </div>
+      )
+    }
+
     return (
       <div className="min-h-screen bg-gray-50 p-4">
         <div className="max-w-md mx-auto">
@@ -235,7 +326,7 @@ export default function MenuPage() {
           </div>
           <OrderStatusComponent
             orderId={currentOrderId}
-            tableNumber={isTokenMode ? 0 : tableNumber}
+            tableNumber={tableInfo.isToken ? 0 : tableInfo.tableNumber}
             onPaymentClick={handlePaymentClick}
           />
         </div>
@@ -332,8 +423,8 @@ export default function MenuPage() {
           </div>
           
           {/* Status Meja - Card dengan Background Foto Cafe */}
-          <div className="mb-8 mt-8 px-4">
-            <div className="relative w-full h-32 rounded-xl overflow-hidden">
+          <div className="mb-4 mt-4 px-4">
+            <div className="relative w-full h-28 rounded-xl overflow-hidden">
               {/* Background Foto Cafe */}
               <Image
                 src="/images/cafe-di-menteng-00.webp"
@@ -349,14 +440,14 @@ export default function MenuPage() {
               <div className="relative h-full flex flex-col items-center justify-center z-[2]">
                 <span className="text-xs font-semibold text-white uppercase tracking-wider mb-1 drop-shadow-lg">Meja</span>
                 <span className="text-3xl font-bold text-white drop-shadow-lg">
-                  {isTokenMode ? '-' : tableNumber}
+                  {tableInfo.isToken ? '-' : tableInfo.tableNumber}
                 </span>
               </div>
             </div>
           </div>
           
           {/* Filter & Search - Sejajar Berdekatan */}
-          <div className="flex items-center gap-2 px-4">
+          <div className="flex items-center gap-2 px-4 mb-2">
             <button 
               onClick={() => setShowFilter(!showFilter)}
               className="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-gradient-to-r from-primary-600 via-primary-500 to-primary-600 text-white rounded-xl hover:from-primary-700 hover:via-primary-600 hover:to-primary-700 transition-all shadow-lg shadow-primary-500/30 font-semibold"
@@ -491,7 +582,8 @@ export default function MenuPage() {
       <Cart
         onCheckout={handleCheckout}
         currentUser={currentUser}
-        tableNumber={isTokenMode ? 0 : tableNumber}
+        tableNumber={tableInfo.isToken ? 0 : tableInfo.tableNumber}
+        token={tableInfo.isToken ? tableInfo.rawToken || rawParam : undefined}
       />
     </div>
   )

@@ -13,9 +13,10 @@ interface CartProps {
   onCheckout: (customerName: string, customerPhone: string, customerEmail: string, paymentMethod: 'QRIS_RESTAURANT' | 'CASHIER') => void
   currentUser?: FirebaseUser | null
   tableNumber: number
+  token?: string // Token untuk redirect ke checkout
 }
 
-export const Cart: React.FC<CartProps> = ({ onCheckout, currentUser, tableNumber }) => {
+export const Cart: React.FC<CartProps> = ({ onCheckout, currentUser, tableNumber, token }) => {
   const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
   const [showCheckoutForm, setShowCheckoutForm] = useState(false)
@@ -66,7 +67,9 @@ export const Cart: React.FC<CartProps> = ({ onCheckout, currentUser, tableNumber
 
   const handleCheckoutClick = () => {
     // Redirect ke halaman checkout form
-    router.push(`/checkout/${tableNumber}`)
+    // Gunakan token jika ada, otherwise gunakan tableNumber
+    const checkoutParam = token || String(tableNumber)
+    router.push(`/checkout/${checkoutParam}`)
   }
 
   const handleSubmitCheckout = (skipValidation = false) => {
@@ -132,15 +135,15 @@ export const Cart: React.FC<CartProps> = ({ onCheckout, currentUser, tableNumber
 
   if (itemCount === 0) {
     return (
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 z-50">
-        <Button
-          variant="primary"
-          className="w-full"
-          disabled
-        >
-          <ShoppingCart className="w-5 h-5 mr-2" />
-          Keranjang Kosong
-        </Button>
+      <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t border-gray-200 shadow-lg z-50">
+        <div className="max-w-md mx-auto p-4">
+          <div className="flex items-center justify-center gap-3 py-3">
+            <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center">
+              <ShoppingCart className="w-5 h-5 text-gray-400" />
+            </div>
+            <p className="text-sm font-medium text-gray-500">Keranjang masih kosong</p>
+          </div>
+        </div>
       </div>
     )
   }
