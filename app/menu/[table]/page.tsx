@@ -33,20 +33,47 @@ export default function MenuPage() {
   const [availableCategories, setAvailableCategories] = useState<string[]>([])
   const [isMobile, setIsMobile] = useState(true)
   const [currentUser, setCurrentUser] = useState<any>(null)
+  const [lastScrollY, setLastScrollY] = useState(0)
+  const [showHeader, setShowHeader] = useState(true)
   
   const setTableNumber = useCartStore((state) => state.setTableNumber)
   const items = useCartStore((state) => state.items)
   const getTotal = useCartStore((state) => state.getTotal)
   const clearCart = useCartStore((state) => state.clearCart)
 
-  // Handle scroll for header
+  // Handle scroll for header - hide on scroll down, show on scroll up
   useEffect(() => {
+    let ticking = false
+    
     const handleScroll = () => {
-      setScrolled(window.scrollY > 10)
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const currentScrollY = window.scrollY
+          
+          // Show header if at top
+          if (currentScrollY < 10) {
+            setShowHeader(true)
+            setScrolled(false)
+          } else {
+            setScrolled(true)
+            // Hide header when scrolling down, show when scrolling up
+            if (currentScrollY > lastScrollY && currentScrollY > 50) {
+              setShowHeader(false)
+            } else if (currentScrollY < lastScrollY) {
+              setShowHeader(true)
+            }
+          }
+          
+          setLastScrollY(currentScrollY)
+          ticking = false
+        })
+        ticking = true
+      }
     }
-    window.addEventListener('scroll', handleScroll)
+    
+    window.addEventListener('scroll', handleScroll, { passive: true })
     return () => window.removeEventListener('scroll', handleScroll)
-  }, [])
+  }, [lastScrollY])
 
   // Validate table number
   useEffect(() => {
@@ -393,7 +420,11 @@ export default function MenuPage() {
           </div>
           
           {/* Status Meja - Card dengan Background Foto Cafe */}
-          <div className="mb-8 mt-8 px-4">
+          <div 
+            className={`mb-8 mt-8 px-4 transition-transform duration-300 ease-in-out ${
+              showHeader ? 'translate-y-0' : '-translate-y-full opacity-0 pointer-events-none'
+            }`}
+          >
             <div className="relative w-full h-32 rounded-xl overflow-hidden">
               {/* Background Foto Cafe */}
               <Image
@@ -415,7 +446,11 @@ export default function MenuPage() {
           </div>
           
           {/* Filter & Search - Sejajar Berdekatan */}
-          <div className="flex items-center gap-2 px-4">
+          <div 
+            className={`flex items-center gap-2 px-4 transition-transform duration-300 ease-in-out ${
+              showHeader ? 'translate-y-0' : '-translate-y-full opacity-0 pointer-events-none'
+            }`}
+          >
             <button 
               onClick={() => setShowFilter(!showFilter)}
               className="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-gradient-to-r from-primary-600 via-primary-500 to-primary-600 text-white rounded-xl hover:from-primary-700 hover:via-primary-600 hover:to-primary-700 transition-all shadow-lg shadow-primary-500/30 font-semibold"
@@ -464,6 +499,7 @@ export default function MenuPage() {
         searchQuery={showSearch ? searchQuery : ''} 
         filterCategory={filterCategory}
         onCategoriesReady={setAvailableCategories}
+        showHeader={showHeader}
       />
 
       {/* Filter Modal */}

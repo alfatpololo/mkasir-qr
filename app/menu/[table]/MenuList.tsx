@@ -10,12 +10,14 @@ interface MenuListProps {
   searchQuery?: string
   filterCategory?: string | null
   onCategoriesReady?: (categories: string[]) => void
+  showHeader?: boolean
 }
 
 export const MenuList: React.FC<MenuListProps> = ({ 
   searchQuery = '', 
   filterCategory,
-  onCategoriesReady
+  onCategoriesReady,
+  showHeader = true
 }) => {
   const [products, setProducts] = useState<Product[]>([])
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
@@ -81,11 +83,17 @@ export const MenuList: React.FC<MenuListProps> = ({
 
   return (
     <div className="max-w-md mx-auto">
-      <CategoryTabs
-        categories={categories}
-        activeCategory={activeCategory}
-        onCategoryChange={setActiveCategory}
-      />
+      <div 
+        className={`transition-all duration-300 ease-in-out ${
+          showHeader ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none h-0 overflow-hidden'
+        }`}
+      >
+        <CategoryTabs
+          categories={categories}
+          activeCategory={activeCategory}
+          onCategoryChange={setActiveCategory}
+        />
+      </div>
 
       <div className="px-4 pb-6">
         {filteredProducts.length === 0 ? (

@@ -280,3 +280,6 @@ Jika ada masalah saat integrasi:
 3. Pastikan Tailwind CSS sudah dikonfigurasi jika menggunakan styling Tailwind
 4. Check console untuk error messages
 
+
+
+
