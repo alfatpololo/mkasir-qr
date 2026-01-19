@@ -46,27 +46,35 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { name, phone, email, note } = body
 
-    // Validasi input
-    if (!name || !phone || !email) {
+    // Validasi input - name dan phone wajib, email opsional
+    if (!name || !phone) {
       return NextResponse.json(
-        { success: false, error: 'Name, phone, and email are required' },
+        { success: false, error: 'Name and phone are required' },
         { status: 400 }
       )
     }
 
-    // Validasi format
-    if (typeof name !== 'string' || typeof phone !== 'string' || typeof email !== 'string') {
+    // Validasi format - email opsional, bisa string kosong
+    if (typeof name !== 'string' || typeof phone !== 'string') {
       return NextResponse.json(
-        { success: false, error: 'Invalid data types' },
+        { success: false, error: 'Name and phone must be strings' },
         { status: 400 }
       )
     }
 
-    // Enkripsi data
+    // Email opsional, jika ada harus string
+    if (email !== undefined && email !== null && typeof email !== 'string') {
+      return NextResponse.json(
+        { success: false, error: 'Email must be a string' },
+        { status: 400 }
+      )
+    }
+
+    // Enkripsi data - email bisa kosong
     const encryptedToken = encryptCustomerData({
       name: name.trim(),
       phone: phone.trim(),
-      email: email.trim(),
+      email: email ? email.trim() : '',
       note: note ? note.trim() : undefined,
     })
 

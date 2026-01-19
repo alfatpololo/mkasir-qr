@@ -15,18 +15,15 @@ export function sanitizeString(input: string): string {
 }
 
 /**
- * Validate and sanitize email
+ * Validate and sanitize email (optional)
  */
 export function validateEmail(email: string): { valid: boolean; sanitized: string; error?: string } {
-  if (!email || typeof email !== 'string') {
-    return { valid: false, sanitized: '', error: 'Email harus diisi' }
+  // Email optional, jika kosong return valid dengan empty string
+  if (!email || typeof email !== 'string' || email.trim().length === 0) {
+    return { valid: true, sanitized: '' }
   }
   
   const trimmed = email.trim().toLowerCase()
-  
-  if (trimmed.length === 0) {
-    return { valid: false, sanitized: '', error: 'Email harus diisi' }
-  }
   
   if (trimmed.length > 100) {
     return { valid: false, sanitized: '', error: 'Email terlalu panjang (maks 100 karakter)' }

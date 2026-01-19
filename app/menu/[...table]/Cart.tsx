@@ -8,6 +8,7 @@ import { formatCurrency } from '@/lib/utils'
 import { Button } from '@/components/Button'
 import { User as FirebaseUser } from 'firebase/auth'
 import { getCustomerByEmail } from '@/lib/firestore'
+import { Toast, useToast } from '@/components/Toast'
 
 interface CartProps {
   onCheckout: (customerName: string, customerPhone: string, customerEmail: string, paymentMethod: 'QRIS_RESTAURANT' | 'CASHIER') => void
@@ -18,6 +19,7 @@ interface CartProps {
 
 export const Cart: React.FC<CartProps> = ({ onCheckout, currentUser, tableNumber, token }) => {
   const router = useRouter()
+  const { showToast, toast, hideToast } = useToast()
   const [isOpen, setIsOpen] = useState(false)
   const [showCheckoutForm, setShowCheckoutForm] = useState(false)
   const [customerName, setCustomerName] = useState('')
@@ -76,7 +78,7 @@ export const Cart: React.FC<CartProps> = ({ onCheckout, currentUser, tableNumber
     // Jika user sudah login dan skipValidation=true, langsung checkout tanpa validasi
     if (currentUser && skipValidation) {
       if (!paymentMethod) {
-        alert('Mohon pilih metode pembayaran')
+        showToast('Mohon pilih metode pembayaran', 'warning')
         return
       }
       setIsOpen(false)
@@ -92,28 +94,26 @@ export const Cart: React.FC<CartProps> = ({ onCheckout, currentUser, tableNumber
     
     // Validasi untuk semua user (baik yang sudah login maupun belum)
     if (!customerName.trim()) {
-      alert('Mohon isi nama pembeli')
+      showToast('Mohon isi nama pembeli', 'warning')
       return
     }
     
     // Nomor HP wajib diisi (baik user login maupun belum login)
     if (!customerPhone.trim()) {
-      alert('Mohon isi nomor HP')
+      showToast('Mohon isi nomor HP', 'warning')
       return
     }
     
-    if (!customerEmail.trim()) {
-      alert('Mohon isi email')
-      return
-    }
-    // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(customerEmail.trim())) {
-      alert('Mohon masukkan email yang valid')
-      return
+    // Email optional, tapi jika diisi harus valid
+    if (customerEmail.trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (!emailRegex.test(customerEmail.trim())) {
+        showToast('Mohon masukkan email yang valid', 'error')
+        return
+      }
     }
     if (!paymentMethod) {
-      alert('Mohon pilih metode pembayaran')
+      showToast('Mohon pilih metode pembayaran', 'warning')
       return
     }
     setIsOpen(false)
@@ -133,53 +133,58 @@ export const Cart: React.FC<CartProps> = ({ onCheckout, currentUser, tableNumber
     setPaymentMethod('QRIS_RESTAURANT')
   }
 
-  if (itemCount === 0) {
-    return (
-      <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-sm border-t border-gray-200 shadow-lg z-50">
-        <div className="max-w-md mx-auto p-4">
-          <div className="flex items-center justify-center gap-3 py-3">
-            <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center">
-              <ShoppingCart className="w-5 h-5 text-gray-400" />
-            </div>
-            <p className="text-sm font-medium text-gray-500">Keranjang masih kosong</p>
-          </div>
-        </div>
-      </div>
-    )
-  }
+  // Cart selalu dirender, bahkan ketika kosong
+  // Hanya tampilkan pesan kosong tanpa tombol jika itemCount === 0
 
   return (
     <>
-      {/* Sticky Bottom Bar */}
+      <Toast
+        message={toast.message}
+        type={toast.type}
+        isVisible={toast.isVisible}
+        onClose={hideToast}
+      />
+      {/* Sticky Bottom Bar - Selalu muncul */}
       <div className="fixed bottom-0 left-0 right-0 bg-gradient-to-r from-white via-white to-white border-t border-gray-200 shadow-2xl z-50 backdrop-blur-sm">
         <div className="max-w-md mx-auto">
-          <button
-            data-cart-trigger
-            onClick={() => setIsOpen(true)}
-            className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
-          >
-            <div className="flex items-center gap-4">
-              <div className="relative">
-                <div className="w-12 h-12 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center shadow-md">
-                  <ShoppingCart className="w-6 h-6 text-white" />
-                </div>
-                {itemCount > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow-lg border-2 border-white">
-                    {itemCount}
-                  </span>
-                )}
+          {itemCount === 0 ? (
+            // Tampilan ketika keranjang kosong
+            <div className="w-full p-4 flex items-center justify-center gap-3">
+              <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center">
+                <ShoppingCart className="w-5 h-5 text-gray-400" />
               </div>
-              <div className="text-left">
-                <p className="text-xs font-medium text-gray-500">{itemCount} item di keranjang</p>
-                <p className="text-xl font-bold bg-gradient-to-r from-primary-600 to-primary-700 bg-clip-text text-transparent">
-                  {formatCurrency(total)}
-                </p>
-              </div>
+              <p className="text-sm font-medium text-gray-500">Keranjang masih kosong</p>
             </div>
-            <Button variant="primary" size="md" className="shadow-md px-6 py-3">
-              <span className="font-semibold">Lihat Keranjang</span>
-            </Button>
-          </button>
+          ) : (
+            // Tampilan ketika ada item di keranjang
+            <button
+              data-cart-trigger
+              onClick={() => setIsOpen(true)}
+              className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+            >
+              <div className="flex items-center gap-4">
+                <div className="relative">
+                  <div className="w-12 h-12 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center shadow-md">
+                    <ShoppingCart className="w-6 h-6 text-white" />
+                  </div>
+                  {itemCount > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow-lg border-2 border-white">
+                      {itemCount}
+                    </span>
+                  )}
+                </div>
+                <div className="text-left">
+                  <p className="text-xs font-medium text-gray-500">{itemCount} item di keranjang</p>
+                  <p className="text-xl font-bold bg-gradient-to-r from-primary-600 to-primary-700 bg-clip-text text-transparent">
+                    {formatCurrency(total)}
+                  </p>
+                </div>
+              </div>
+              <Button variant="primary" size="md" className="shadow-md px-6 py-3 font-bold">
+                <span className="font-semibold">Lihat & Proses</span>
+              </Button>
+            </button>
+          )}
         </div>
       </div>
 
@@ -271,15 +276,15 @@ export const Cart: React.FC<CartProps> = ({ onCheckout, currentUser, tableNumber
                   </div>
                   <Button
                     variant="primary"
-                    className="w-full shadow-lg"
+                    className="w-full shadow-lg py-4 text-lg font-bold"
                     onClick={handleCheckoutClick}
                     disabled={loadingCustomerData}
                   >
                     <ShoppingCart className="w-5 h-5" />
                     <span>
                       {currentUser && customerName && customerEmail && customerPhone.trim()
-                        ? 'Checkout Sekarang (Data Otomatis)' 
-                        : 'Checkout Sekarang'}
+                        ? 'Lanjut ke Pembayaran (Data Otomatis)' 
+                        : 'Lanjut ke Pembayaran'}
                     </span>
                   </Button>
                   {currentUser && customerName && customerEmail && customerPhone.trim() && (
@@ -336,7 +341,7 @@ export const Cart: React.FC<CartProps> = ({ onCheckout, currentUser, tableNumber
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Email *
+                      Email <span className="text-gray-400 text-xs">(opsional)</span>
                     </label>
                     <div className="relative">
                       <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -344,9 +349,8 @@ export const Cart: React.FC<CartProps> = ({ onCheckout, currentUser, tableNumber
                         type="email"
                         value={customerEmail}
                         onChange={(e) => setCustomerEmail(e.target.value)}
-                        placeholder="email@example.com"
+                        placeholder="email@example.com (opsional)"
                         className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500"
-                        required
                       />
                     </div>
                   </div>

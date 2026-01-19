@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { ShoppingCart, Filter, Search, X, Check, LogIn, User } from 'lucide-react'
+import { ShoppingCart, Filter, Search, X, Check } from 'lucide-react'
 import { MenuList } from './MenuList'
 import { Cart } from './Cart'
 import { OrderStatusComponent } from '@/components/OrderStatus'
@@ -90,6 +90,13 @@ export default function MenuPage() {
           setError('Nomor meja atau token tidak valid')
           setLoading(false)
           return
+        }
+
+        // Simpan token/table ke localStorage untuk redirect nanti
+        if (parsed.isToken && parsed.rawToken) {
+          localStorage.setItem('tableToken', parsed.rawToken)
+        } else {
+          localStorage.setItem('tableNumber', String(parsed.tableNumber))
         }
 
         // Set table number untuk cart store (hanya untuk numeric mode)
@@ -360,9 +367,9 @@ export default function MenuPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
+    <div className="w-full bg-gray-50 pb-28">
       {/* Header dengan Background Putih */}
-      <div className="sticky top-0 z-40 bg-white">
+      <div className="bg-white">
         <div className="max-w-md mx-auto">
           {/* Top Bar: Logo, Cart Icon, Login Button */}
           <div className="flex items-center justify-between mb-0 bg-gradient-to-r from-primary-700 via-primary-600 to-primary-700 px-4 py-0.5">
@@ -379,7 +386,7 @@ export default function MenuPage() {
               />
             </div>
             
-            {/* Cart Icon & Login Button - Kanan */}
+            {/* Cart Icon - Kanan */}
             <div className="flex items-center gap-2">
               {/* Cart Icon */}
               <button
@@ -396,29 +403,6 @@ export default function MenuPage() {
                   </span>
                 )}
               </button>
-              
-              {/* Login/Profile Button */}
-              {currentUser ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => router.push('/profile')}
-                  className="border-white text-white hover:bg-white/20"
-                >
-                  <User className="w-4 h-4" />
-                  <span>Profil</span>
-                </Button>
-              ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => router.push('/login')}
-                  className="border-white text-white hover:bg-white/20"
-                >
-                  <LogIn className="w-4 h-4" />
-                  <span>Login</span>
-                </Button>
-              )}
             </div>
           </div>
           

@@ -9,7 +9,7 @@ import { createOrder } from '@/lib/firestore'
 import { formatCurrency } from '@/lib/utils'
 import { validateEmail, validatePhone, validateName, validateOrderNote, checkRateLimit } from '@/lib/validation'
 import { parseTableParam, parseTableParamQuick } from '@/lib/token-utils'
-import { buildPOSPayload, sendOrderToPOS } from '@/lib/pos-api'
+import { buildMejaTransaksiPayload, sendTransactionToMeja, getMejaProfile, buildQRISImageURL } from '@/lib/pos-api'
 import Image from 'next/image'
 
 function PaymentMethodContent() {
@@ -60,6 +60,17 @@ function PaymentMethodContent() {
     note: string
   } | null>(null)
   const [decryptingData, setDecryptingData] = useState(false)
+  const [qrisAvailable, setQrisAvailable] = useState(false)
+  const [qrisImageUrl, setQrisImageUrl] = useState<string | null>(null)
+  const [loadingProfile, setLoadingProfile] = useState(false)
+  const [orderTotal, setOrderTotal] = useState<number>(0) // Simpan total sebelum cart di-clear
+  const [savedOrderItems, setSavedOrderItems] = useState<Array<{
+    productId: string
+    name: string
+    price: number
+    qty: number
+    note?: string
+  }>>([]) // Simpan items sebelum cart di-clear
   
   const items = useCartStore((state) => state.items)
   const getTotal = useCartStore((state) => state.getTotal)
@@ -85,6 +96,13 @@ function PaymentMethodContent() {
         console.log('🔍 Payment - Parsed result:', parsed)
         
         setTableInfo(parsed)
+        
+        // Simpan token/table ke localStorage untuk redirect nanti
+        if (parsed.isToken && parsed.rawToken) {
+          localStorage.setItem('tableToken', parsed.rawToken)
+        } else {
+          localStorage.setItem('tableNumber', String(parsed.tableNumber))
+        }
       } catch (err: any) {
         console.error('Error validating table param:', err)
         // Fallback ke dummy data
@@ -167,6 +185,53 @@ function PaymentMethodContent() {
   const emailValidation = validateEmail(customerData?.email || rawEmail)
   const noteValidation = validateOrderNote(customerData?.note || rawNote)
 
+  // Cek QRIS availability dari API /meja/profile
+  useEffect(() => {
+    if (!tableInfo || !tableInfo.isToken || !tableInfo.rawToken) {
+      setLoadingProfile(false)
+      return
+    }
+
+    const checkQRIS = async () => {
+      try {
+        setLoadingProfile(true)
+        console.log('🔍 Checking QRIS availability for token:', tableInfo.rawToken)
+        
+        const profileResponse = await getMejaProfile(tableInfo.rawToken)
+        
+        if (profileResponse.status === 'Success' && profileResponse.data?.stall?.qris) {
+          const qrisPath = profileResponse.data.stall.qris
+          
+          // Cek apakah qris ada, tidak kosong, dan tidak null
+          if (qrisPath && qrisPath.trim() !== '' && qrisPath !== 'null') {
+            const qrisUrl = buildQRISImageURL(qrisPath)
+            if (qrisUrl) {
+              console.log('✅ QRIS available:', qrisUrl)
+              setQrisAvailable(true)
+              setQrisImageUrl(qrisUrl)
+            } else {
+              console.log('⚠️ QRIS path invalid')
+              setQrisAvailable(false)
+            }
+          } else {
+            console.log('⚠️ QRIS not available (empty or null)')
+            setQrisAvailable(false)
+          }
+        } else {
+          console.log('⚠️ QRIS not available in response')
+          setQrisAvailable(false)
+        }
+      } catch (error: any) {
+        console.error('❌ Error checking QRIS availability:', error)
+        setQrisAvailable(false)
+      } finally {
+        setLoadingProfile(false)
+      }
+    }
+
+    checkQRIS()
+  }, [tableInfo])
+
   // Redirect if cart is empty or missing customer data (tapi tunggu dekripsi selesai)
   useEffect(() => {
     if (!tableInfo) return
@@ -192,13 +257,13 @@ function PaymentMethodContent() {
       return
     }
     
-    // Validate customer data
-    if (!nameValidation.valid || !phoneValidation.valid || !emailValidation.valid) {
+    // Validate customer data (email optional)
+    if (!nameValidation.valid || !phoneValidation.valid) {
       const redirectParam = tableInfo.rawToken || tableParam
       router.push(`/checkout/${redirectParam}`)
       return
     }
-  }, [items.length, nameValidation.valid, phoneValidation.valid, emailValidation.valid, tableInfo, tableParam, router, decryptingData, encryptedData, customerData, orderCompleted])
+  }, [items.length, nameValidation.valid, phoneValidation.valid, tableInfo, tableParam, router, decryptingData, encryptedData, customerData, orderCompleted])
   
   // Show loading while validating or decrypting
   if (validatingTable || decryptingData) {
@@ -241,19 +306,97 @@ function PaymentMethodContent() {
   const customerEmail = emailValidation.valid ? emailValidation.sanitized : ''
   const orderNote = noteValidation.valid ? noteValidation.sanitized : ''
 
-  const handleSelesai = () => {
-    // Alert selesai
-    alert('Selesai')
+  const handleSelesai = async () => {
+    // Hanya untuk QRIS, insert ke API saat klik Selesai
+    if (paymentMethod === 'QRIS_RESTAURANT' && completedOrderId && savedOrderItems.length > 0) {
+      setLoading(true)
+      
+      try {
+        console.log('📤 Inserting transaction to /meja/transaksi (QRIS completed)...')
+        
+        // Tentukan nomor meja: jika token mode, gunakan 0 atau tableNumber dari tableInfo
+        const mejaNumber = tableInfo?.isToken 
+          ? (tableInfo.tableNumber || 0) 
+          : (tableNumber || 0)
+        
+        // Ambil token meja jika menggunakan token mode (format: stall_id:token)
+        const tokenMeja = tableInfo?.isToken && tableInfo.rawToken 
+          ? tableInfo.rawToken 
+          : undefined
+        
+        // Build payload untuk endpoint /meja/transaksi dengan status "selesai" dan transaction_method_id: 4
+        const mejaPayload = buildMejaTransaksiPayload({
+          token: tokenMeja,
+          tableNumber: mejaNumber,
+          customerName: customerName,
+          customerPhone: customerPhone,
+          customerEmail: customerEmail,
+          paymentMethod: 'QRIS_RESTAURANT',
+          orderNote: orderNote || undefined,
+          items: savedOrderItems,
+          status: 'PAID', // Status untuk QRIS yang sudah selesai
+          transactionMethodId: 4, // QRIS transaction method
+        })
+        
+        // Update status menjadi "selesai"
+        mejaPayload.status = 'selesai'
+        
+        console.log('📦 Payload untuk /meja/transaksi (QRIS completed):', JSON.stringify(mejaPayload, null, 2))
+
+        // Kirim ke endpoint /meja/transaksi
+        const posResponse = await sendTransactionToMeja(mejaPayload)
+        
+        // Cek jika status 200 dan response.status === "Success"
+        if (posResponse.status === 'Success' && posResponse.data) {
+          console.log('✅ Transaction sent to /meja/transaksi successfully')
+          console.log('📋 Response data:', posResponse.data)
+          
+          // Simpan data untuk ditampilkan di UI
+          if (posResponse.data.id) {
+            setPosOrderId(String(posResponse.data.id))
+          } else if (posResponse.data.order_id) {
+            setPosOrderId(posResponse.data.order_id)
+          }
+          
+          if (posResponse.data.nomor_transaksi) {
+            setPosOrderNumber(posResponse.data.nomor_transaksi)
+          } else if (posResponse.data.order_number) {
+            setPosOrderNumber(posResponse.data.order_number)
+          }
+        } else {
+          console.warn('⚠️ Response dari /meja/transaksi tidak berhasil:', posResponse)
+          const errorMsg = posResponse.error?.message || posResponse.message || 'Gagal mengirim transaksi ke server'
+          alert(`⚠️ Gagal mengirim transaksi\n\n${errorMsg}`)
+          setLoading(false)
+          return
+        }
+      } catch (posError: any) {
+        console.error('❌ Error sending transaction to /meja/transaksi:', posError)
+        const errorMessage = posError.message || 'Terjadi kesalahan saat mengirim transaksi ke server'
+        alert(`❌ Gagal mengirim transaksi\n\n${errorMessage}`)
+        setLoading(false)
+        return
+      }
+      
+      setLoading(false)
+    }
     
-    // Redirect ke menu dengan token
-    if (tableInfo?.isToken && tableInfo.rawToken) {
-      router.push(`/menu/${tableInfo.rawToken}`)
+    // Redirect ke halaman konfirmasi "Pesanan berhasil" dengan orderId
+    if (completedOrderId) {
+      router.push(`/order-success/${completedOrderId}`)
     } else {
-      router.push(`/menu/${tableInfo?.tableNumber || tableNumber}`)
+      // Fallback ke menu jika tidak ada orderId
+      if (tableInfo?.isToken && tableInfo.rawToken) {
+        router.push(`/menu/${tableInfo.rawToken}`)
+      } else {
+        router.push(`/menu/${tableInfo?.tableNumber || tableNumber}`)
+      }
     }
   }
 
   const handleSubmit = async () => {
+    console.log('🚀 handleSubmit called - Konfirmasi Pesanan clicked')
+    
     if (!paymentMethod) {
       setError('Mohon pilih metode pembayaran')
       return
@@ -276,6 +419,7 @@ function PaymentMethodContent() {
 
     setError('')
     setLoading(true)
+    console.log('✅ Validation passed, starting order creation...')
 
     try {
       const total = getTotal()
@@ -311,6 +455,7 @@ function PaymentMethodContent() {
       }
 
       // Create order with sanitized data
+      console.log('📝 Creating order in Firestore...')
       const orderId = await createOrder({
         tableNumber,
         customerName: customerName,
@@ -322,63 +467,156 @@ function PaymentMethodContent() {
         status: initialStatus,
         total,
       })
+      console.log('✅ Order created in Firestore with ID:', orderId)
 
-      // Kirim data transaksi ke POS API
-      try {
-        console.log('📤 Sending transaction data to POS API...')
+      // Kirim data transaksi ke endpoint /meja/transaksi HANYA untuk pembayaran KASIR
+      // Untuk QRIS, tidak perlu insert ke /meja/transaksi dulu
+      if (paymentMethod === 'CASHIER') {
+        console.log('📤 Preparing to send transaction to /meja/transaksi (CASHIER only)...')
+        console.log('📊 Items count:', items.length)
+        console.log('📊 Table info:', { isToken: tableInfo?.isToken, tableNumber: tableNumber })
         
-        // Build payload untuk POS API menggunakan data dari cart items (masih ada sebelum clearCart)
-        const posPayload = buildPOSPayload({
-          token: tableInfo?.isToken ? tableInfo.rawToken : undefined,
-          tableNumber: tableInfo?.isToken ? undefined : tableNumber,
-          customerName: customerName,
-          customerPhone: customerPhone,
-          customerEmail: customerEmail,
-          paymentMethod: paymentMethod,
-          orderNote: orderNote || undefined,
-          items: items.map(item => ({
-            productId: item.productId,
-            name: item.name,
-            price: item.price,
-            qty: item.qty,
-            note: item.note,
-          })),
-          status: initialStatus,
-        })
-
-        console.log('📦 POS Payload:', JSON.stringify(posPayload, null, 2))
-
-        // Kirim ke POS API
-        const posResponse = await sendOrderToPOS(posPayload)
+        let apiSuccess = false
         
-        if (posResponse.success && posResponse.data) {
-          console.log('✅ Transaction sent to POS API successfully:', posResponse.data.order_id)
-          console.log('📋 POS Order ID:', posResponse.data.order_id)
-          console.log('📋 POS Order Number:', posResponse.data.order_number)
+        try {
+          console.log('📤 Sending transaction data to /meja/transaksi...')
           
-          // Simpan POS order ID untuk ditampilkan di UI
-          setPosOrderId(posResponse.data.order_id)
-          if (posResponse.data.order_number) {
-            setPosOrderNumber(posResponse.data.order_number)
+          // Tentukan nomor meja: jika token mode, gunakan 0 atau tableNumber dari tableInfo
+          const mejaNumber = tableInfo?.isToken 
+            ? (tableInfo.tableNumber || 0) 
+            : (tableNumber || 0)
+          
+          // Ambil token meja jika menggunakan token mode (format: stall_id:token)
+          const tokenMeja = tableInfo?.isToken && tableInfo.rawToken 
+            ? tableInfo.rawToken 
+            : undefined
+          
+          // Build payload untuk endpoint /meja/transaksi menggunakan data dari cart items
+          const mejaPayload = buildMejaTransaksiPayload({
+            token: tokenMeja,
+            tableNumber: mejaNumber,
+            customerName: customerName,
+            customerPhone: customerPhone,
+            customerEmail: customerEmail,
+            paymentMethod: paymentMethod,
+            orderNote: orderNote || undefined,
+            items: items.map(item => ({
+              productId: item.productId,
+              name: item.name,
+              price: item.price,
+              qty: item.qty,
+              note: item.note,
+            })),
+            status: initialStatus,
+          })
+
+          console.log('📦 Payload untuk /meja/transaksi:', JSON.stringify(mejaPayload, null, 2))
+
+          // Kirim ke endpoint /meja/transaksi
+          const posResponse = await sendTransactionToMeja(mejaPayload)
+          
+          // Cek jika status 200 dan response.status === "Success"
+          if (posResponse.status === 'Success' && posResponse.data) {
+            console.log('✅ Transaction sent to /meja/transaksi successfully')
+            console.log('📋 Response data:', posResponse.data)
+            
+            // Simpan data untuk ditampilkan di UI
+            if (posResponse.data.id) {
+              setPosOrderId(String(posResponse.data.id))
+            } else if (posResponse.data.order_id) {
+              setPosOrderId(posResponse.data.order_id)
+            }
+            
+            if (posResponse.data.nomor_transaksi) {
+              setPosOrderNumber(posResponse.data.nomor_transaksi)
+            } else if (posResponse.data.order_number) {
+              setPosOrderNumber(posResponse.data.order_number)
+            }
+            
+            apiSuccess = true
+          } else {
+            console.warn('⚠️ Response dari /meja/transaksi tidak berhasil:', posResponse)
+            // Tampilkan error ke user jika response tidak berhasil
+            const errorMsg = posResponse.error?.message || posResponse.message || 'Gagal mengirim transaksi ke server'
+            console.error('❌ API Error:', errorMsg)
+            
+            // Set error state untuk ditampilkan di UI
+            setError(`Gagal mengirim transaksi ke server: ${errorMsg}. Silakan coba lagi.`)
+            
+            // Tampilkan alert ke user
+            alert(`⚠️ Transaksi Gagal\n\n${errorMsg}\n\nSilakan coba lagi atau hubungi admin.`)
+            
+            // Jangan lanjutkan proses, tetap di halaman ini
+            setLoading(false)
+            return
           }
-        } else {
-          console.warn('⚠️ POS API response not successful:', posResponse.error)
+        } catch (posError: any) {
+          // Log error detail untuk debugging
+          console.error('❌ Error sending transaction to /meja/transaksi:', posError)
+          console.error('❌ Error details:', {
+            message: posError.message,
+            stack: posError.stack,
+            response: posError.response,
+          })
+          console.warn('⚠️ Order saved to Firestore but API sync failed. Firestore Order ID:', orderId)
+          
+          // Set error state untuk ditampilkan di UI
+          const errorMessage = posError.message || 'Terjadi kesalahan saat mengirim transaksi ke server'
+          setError(`Gagal mengirim transaksi: ${errorMessage}. Silakan coba lagi.`)
+          
+          // Tampilkan alert ke user
+          alert(`❌ Transaksi Gagal\n\n${errorMessage}\n\nSilakan coba lagi atau hubungi admin.\n\nOrder ID: ${orderId}`)
+          
+          // Jangan lanjutkan proses, tetap di halaman ini
+          setLoading(false)
+          return
         }
-      } catch (posError: any) {
-        // Jangan gagalkan proses jika POS API error, karena order sudah tersimpan di Firestore
-        console.error('❌ Error sending transaction to POS API:', posError)
-        console.warn('⚠️ Order saved to Firestore but POS API sync failed. Firestore Order ID:', orderId)
+
+        // Hanya lanjutkan jika API berhasil (untuk CASHIER)
+        if (!apiSuccess) {
+          setLoading(false)
+          return
+        }
+      } else {
+        // Untuk QRIS, tidak perlu insert ke API, langsung lanjut
+        console.log('✅ QRIS payment selected, skipping /meja/transaksi API call')
       }
 
-      // Set order completed state SEBELUM clear cart untuk mencegah redirect
-      setCompletedOrderId(orderId)
-      setOrderCompleted(true)
+      // Simpan customer data ke localStorage untuk riwayat pesanan (nomor HP wajib, email optional)
+      if (customerPhone) {
+        localStorage.setItem('customerPhone', customerPhone)
+      }
+      if (customerEmail) {
+        localStorage.setItem('customerEmail', customerEmail)
+      }
+      
+      // Simpan total dan items SEBELUM clear cart
+      console.log('💰 Saving order total:', total)
+      setOrderTotal(total)
+      setSavedOrderItems(orderItems.map(item => ({
+        productId: item.productId,
+        name: item.name,
+        price: items.find(i => i.productId === item.productId)?.price || 0,
+        qty: item.qty,
+        note: item.note,
+      })))
+      console.log('💰 Order total saved:', total, 'Items saved:', orderItems.length)
       
       // Clear cart setelah state di-set
       clearCart()
       
       setLoading(false)
-      console.log('✅ Order completed, QRIS should be displayed')
+      console.log('✅ Order completed, orderId:', orderId)
+      
+      // Untuk CASHIER, langsung redirect ke order-success
+      // Untuk QRIS, tampilkan QRIS page dulu
+      if (paymentMethod === 'CASHIER') {
+        router.push(`/order-success/${orderId}`)
+      } else {
+        // Set order completed state untuk menampilkan QRIS page
+        setCompletedOrderId(orderId)
+        setOrderCompleted(true)
+      }
     } catch (err: any) {
       console.error('Error creating order:', err)
       setError(err.message || 'Gagal membuat pesanan. Silakan coba lagi.')
@@ -407,31 +645,28 @@ function PaymentMethodContent() {
     )
   }
 
-  const total = getTotal()
+  // Gunakan orderTotal jika sudah ada, jika belum gunakan getTotal() (untuk preview sebelum submit)
+  const total = orderTotal > 0 ? orderTotal : getTotal()
+  console.log('💰 Display total - orderTotal:', orderTotal, 'getTotal():', getTotal(), 'final total:', total)
 
-  // Tampilkan hasil setelah order completed
+  // Tampilkan QRIS/Cashier page setelah order completed
   if (orderCompleted && paymentMethod) {
     console.log('📱 Rendering QRIS/Cashier page, orderCompleted:', orderCompleted, 'paymentMethod:', paymentMethod)
-    const menuUrl = tableInfo?.isToken && tableInfo.rawToken 
-      ? `/menu/${tableInfo.rawToken}`
-      : `/menu/${tableInfo?.tableNumber || tableNumber}`
 
     return (
-      <div className="min-h-screen bg-gray-50 pb-24">
+      <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
         {/* Header */}
-        <div className="bg-gradient-to-r from-primary-600 to-primary-700 text-white p-4 sticky top-0 z-40">
+        <div className="bg-white border-b border-gray-200 px-4 py-3 flex-shrink-0">
           <div className="max-w-md mx-auto flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <h1 className="text-lg font-bold">
-                {paymentMethod === 'QRIS_RESTAURANT' ? 'Pembayaran QRIS' : 'Pembayaran Kasir'}
-              </h1>
-            </div>
-            <div className="w-12 h-12 relative">
+            <h1 className="text-base font-semibold text-gray-900">
+              {paymentMethod === 'QRIS_RESTAURANT' ? 'Pembayaran QRIS' : 'Pembayaran Kasir'}
+            </h1>
+            <div className="w-8 h-8 relative">
               <Image
                 src="/images/logo.png"
                 alt="MKASIR Logo"
-                width={48}
-                height={48}
+                width={32}
+                height={32}
                 className="object-contain w-full h-full"
                 priority
                 unoptimized
@@ -440,126 +675,131 @@ function PaymentMethodContent() {
           </div>
         </div>
 
-        <div className="max-w-md mx-auto px-4 py-6">
-          {/* Info Pesanan */}
-          {completedOrderId && (
-            <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-4">
-              <div className="flex items-center gap-2 mb-2">
-                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <p className="text-sm font-medium text-green-800">Pesanan berhasil dibuat</p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs text-green-700">Firestore ID: {completedOrderId}</p>
-                {posOrderId && (
-                  <p className="text-xs text-green-700">POS Order ID: {posOrderId}</p>
-                )}
-                {posOrderNumber && (
-                  <p className="text-xs text-green-700 font-semibold">Order Number: {posOrderNumber}</p>
-                )}
-                {!posOrderId && (
-                  <p className="text-xs text-yellow-700 italic">(Sinkronisasi ke POS API sedang diproses...)</p>
-                )}
-              </div>
-            </div>
-          )}
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-md mx-auto px-4 py-4 space-y-3">
 
-          {paymentMethod === 'QRIS_RESTAURANT' ? (
-            // Tampilan QRIS
-            <div className="bg-white rounded-xl shadow-md border border-gray-100 p-6 mb-6">
-              <div className="text-center">
-                <h2 className="text-xl font-bold text-gray-900 mb-2">Scan QR Code untuk Pembayaran</h2>
-                <p className="text-sm text-gray-600 mb-4">Total: {formatCurrency(total)}</p>
-                
-                {/* QRIS Image - Statis */}
-                <div className="bg-white p-6 rounded-xl border-2 border-gray-200 inline-block mb-4">
-                  <div className="w-64 h-64 bg-white rounded-lg flex items-center justify-center border-2 border-gray-300">
-                    {/* QR Code Pattern - Statis */}
-                    <div className="w-56 h-56 bg-white p-2">
-                      <div className="grid grid-cols-21 gap-0.5 w-full h-full">
-                        {Array.from({ length: 441 }).map((_, i) => {
-                          const row = Math.floor(i / 21)
-                          const col = i % 21
-                          // Pattern QR code sederhana
-                          const isBlack = 
-                            (row < 3 && col < 3) || // Top-left corner
-                            (row < 3 && col >= 18) || // Top-right corner
-                            (row >= 18 && col < 3) || // Bottom-left corner
-                            (row === 10) || // Horizontal line
-                            (col === 10) || // Vertical line
-                            ((row + col) % 3 === 0 && row > 3 && row < 18 && col > 3 && col < 18) // Pattern
-                          return (
-                            <div
-                              key={i}
-                              className={`w-full h-full ${isBlack ? 'bg-gray-900' : 'bg-white'}`}
-                            />
-                          )
-                        })}
+            {paymentMethod === 'QRIS_RESTAURANT' ? (
+              // Tampilan QRIS
+              <div className="bg-gradient-to-br from-white to-gray-50 rounded-xl border border-gray-200 shadow-sm p-6">
+                <div className="text-center">
+                  {/* Header dengan icon */}
+                  <div className="mb-4">
+                    <div className="w-16 h-16 mx-auto mb-3 bg-primary-100 rounded-full flex items-center justify-center">
+                      <CreditCard className="w-8 h-8 text-primary-600" />
+                    </div>
+                    <h2 className="text-lg font-bold text-gray-900 mb-2">Scan QR Code</h2>
+                    <p className="text-xs text-gray-500">Untuk melakukan pembayaran</p>
+                  </div>
+
+                  {/* Total Amount - Highlighted */}
+                  <div className="bg-gradient-to-r from-primary-50 to-primary-100 rounded-xl p-4 mb-5 border border-primary-200">
+                    <p className="text-xs font-medium text-gray-600 mb-1">Total Pembayaran</p>
+                    <p className="text-2xl font-bold text-primary-700">{formatCurrency(total)}</p>
+                  </div>
+                  
+                  {/* QRIS Image dari API */}
+                  {qrisImageUrl ? (
+                    <div className="bg-white p-5 rounded-xl border-2 border-gray-200 shadow-lg inline-block mb-4">
+                      <div className="w-64 h-64 bg-white rounded-lg flex items-center justify-center border border-gray-100 overflow-hidden shadow-inner">
+                        <Image
+                          src={qrisImageUrl}
+                          alt="QRIS Code"
+                          width={256}
+                          height={256}
+                          className="w-full h-full object-contain"
+                          unoptimized
+                        />
                       </div>
                     </div>
+                  ) : (
+                    <div className="bg-white p-5 rounded-xl border-2 border-gray-200 inline-block mb-4">
+                      <div className="w-64 h-64 bg-gray-50 rounded-lg flex items-center justify-center border border-gray-200">
+                        <div className="text-center">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto mb-2"></div>
+                          <p className="text-xs text-gray-500">Memuat QR Code...</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Instructions */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-4">
+                    <p className="text-xs font-medium text-blue-900 mb-1">Cara Pembayaran:</p>
+                    <ol className="text-xs text-blue-800 space-y-1 text-left list-decimal list-inside">
+                      <li>Buka aplikasi pembayaran Anda (GoPay, OVO, DANA, dll)</li>
+                      <li>Pilih menu Scan QR Code</li>
+                      <li>Arahkan kamera ke QR code di atas</li>
+                      <li>Konfirmasi pembayaran sesuai nominal</li>
+                    </ol>
                   </div>
                 </div>
-
-                <p className="text-sm text-gray-600 mb-2">
-                  Scan QR code di atas menggunakan aplikasi pembayaran Anda
-                </p>
-                <p className="text-xs text-gray-500">
-                  Setelah pembayaran selesai, klik tombol "Selesai" di bawah
-                </p>
               </div>
-            </div>
-          ) : (
-            // Tampilan Kasir
-            <div className="bg-white rounded-xl shadow-md border border-gray-100 p-6 mb-6">
-              <div className="text-center">
-                <div className="w-20 h-20 mx-auto mb-4 bg-primary-100 rounded-full flex items-center justify-center">
-                  <Wallet className="w-10 h-10 text-primary-600" />
+            ) : (
+              // Tampilan Kasir
+              <div className="bg-gradient-to-br from-white to-gray-50 rounded-xl border border-gray-200 shadow-sm p-6">
+                <div className="text-center">
+                  <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-br from-primary-100 to-primary-200 rounded-full flex items-center justify-center shadow-md">
+                    <Wallet className="w-10 h-10 text-primary-600" />
+                  </div>
+                  <h2 className="text-lg font-bold text-gray-900 mb-2">Silahkan ke Kasir</h2>
+                  
+                  {/* Total Amount */}
+                  <div className="bg-gradient-to-r from-primary-50 to-primary-100 rounded-xl p-4 mb-4 border border-primary-200">
+                    <p className="text-xs font-medium text-gray-600 mb-1">Total Pembayaran</p>
+                    <p className="text-2xl font-bold text-primary-700">{formatCurrency(total)}</p>
+                  </div>
+
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-4">
+                    <p className="text-xs font-medium text-blue-900 mb-1">Informasi:</p>
+                    <p className="text-xs text-blue-800 text-left">
+                      Pesanan Anda sudah tercatat di sistem. Silakan menuju ke kasir untuk melakukan pembayaran dengan menunjukkan nomor order atau data pembeli.
+                    </p>
+                  </div>
                 </div>
-                <h2 className="text-xl font-bold text-gray-900 mb-3">Silahkan ke Kasir</h2>
-                <p className="text-sm text-gray-600 mb-2">
-                  Pesanan Anda sudah tercatat
-                </p>
-                <p className="text-sm text-gray-600">
-                  Silakan menuju ke kasir untuk melakukan pembayaran
-                </p>
               </div>
-            </div>
-          )}
+            )}
+          </div>
+        </div>
 
-          {/* Tombol Selesai */}
-          <Button
-            variant="primary"
-            className="w-full"
-            onClick={handleSelesai}
-          >
-            <span>Selesai</span>
-          </Button>
+        {/* Fixed Bottom Button */}
+        <div className="bg-white border-t border-gray-200 px-4 py-3 flex-shrink-0">
+          <div className="max-w-md mx-auto">
+            <Button
+              variant="primary"
+              className="w-full"
+              onClick={handleSelesai}
+              isLoading={loading}
+              disabled={loading}
+            >
+              <span>Selesai</span>
+            </Button>
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
+    <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
       {/* Header */}
-      <div className="bg-gradient-to-r from-primary-600 to-primary-700 text-white p-4 sticky top-0 z-40">
+      <div className="bg-white border-b border-gray-200 px-4 py-3 flex-shrink-0">
         <div className="max-w-md mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button
               onClick={() => router.back()}
-              className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+              className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
             >
-              <ArrowLeft className="w-5 h-5" />
+              <ArrowLeft className="w-5 h-5 text-gray-700" />
             </button>
-            <h1 className="text-lg font-bold">Pilih Metode Pembayaran</h1>
+            <h1 className="text-base font-semibold text-gray-900">Pembayaran</h1>
           </div>
-          <div className="w-12 h-12 relative">
+          <div className="w-8 h-8 relative">
             <Image
               src="/images/logo.png"
               alt="MKASIR Logo"
-              width={48}
-              height={48}
+              width={32}
+              height={32}
               className="object-contain w-full h-full"
               priority
               unoptimized
@@ -568,130 +808,134 @@ function PaymentMethodContent() {
         </div>
       </div>
 
-      <div className="max-w-md mx-auto px-4 py-6">
-        {/* Total */}
-        <div className="bg-white rounded-xl shadow-md border border-gray-100 p-4 mb-6">
-          <div className="flex items-center justify-between">
-            <span className="font-bold text-gray-900 text-lg">Total</span>
-            <span className="text-2xl font-bold text-primary-600">
-              {formatCurrency(total)}
-            </span>
+      {/* Scrollable Content */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-md mx-auto px-4 py-4 space-y-3">
+          {/* Total */}
+          <div className="bg-white rounded-lg border border-gray-200 p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium text-gray-600">Total</span>
+              <span className="text-xl font-bold text-primary-600">
+                {formatCurrency(total)}
+              </span>
+            </div>
           </div>
-        </div>
 
-        {/* Customer Info */}
-        <div className="bg-white rounded-xl shadow-md border border-gray-100 p-4 mb-6">
-          <h2 className="font-bold text-gray-900 mb-3 text-lg">Data Pembeli</h2>
-          <div className="space-y-2.5 text-sm">
-            <div className="flex justify-between items-start">
-              <span className="text-gray-600">Nama</span>
-              <span className="font-medium text-gray-900 text-right">{customerName}</span>
-            </div>
-            <div className="flex justify-between items-start">
-              <span className="text-gray-600">Email</span>
-              <span className="font-medium text-gray-900 text-right break-all max-w-[60%]">{customerEmail}</span>
-            </div>
-            <div className="flex justify-between items-start">
-              <span className="text-gray-600">Nomor HP</span>
-              <span className="font-medium text-gray-900 text-right">{customerPhone}</span>
-            </div>
-            {orderNote && (
-              <div className="pt-2.5 mt-2.5 border-t border-gray-200">
-                <div className="flex justify-between items-start">
-                  <span className="text-gray-600">Catatan Pesanan</span>
-                  <span className="font-medium text-gray-900 text-right text-sm max-w-[60%]">{orderNote}</span>
+          {/* Customer Info */}
+          <div className="bg-white rounded-lg border border-gray-200 p-3">
+            <h2 className="text-sm font-semibold text-gray-900 mb-2.5">Data Pembeli</h2>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-500">Nama</span>
+                <span className="font-medium text-gray-900 text-right">{customerName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Email</span>
+                <span className="font-medium text-gray-900 text-right break-all max-w-[60%]">{customerEmail}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">HP</span>
+                <span className="font-medium text-gray-900 text-right">{customerPhone}</span>
+              </div>
+              {orderNote && (
+                <div className="pt-2 mt-2 border-t border-gray-100">
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Catatan</span>
+                    <span className="font-medium text-gray-900 text-right text-xs max-w-[60%]">{orderNote}</span>
+                  </div>
                 </div>
+              )}
+            </div>
+          </div>
+
+          {/* Payment Method Selection */}
+          <div className="bg-white rounded-lg border border-gray-200 p-3">
+            <h2 className="text-sm font-semibold text-gray-900 mb-3">Metode Pembayaran</h2>
+
+            {error && (
+              <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-xs font-medium text-red-800">{error}</p>
               </div>
             )}
-          </div>
-        </div>
 
-        {/* Payment Method Selection */}
-        <div className="bg-white rounded-xl shadow-md border border-gray-100 p-6 mb-6">
-          <h2 className="font-bold text-gray-900 mb-4">Pilih Metode Pembayaran</h2>
-
-          {error && (
-            <div className="mb-4 p-4 bg-red-50 border-l-4 border-red-500 rounded-lg">
-              <div className="flex items-start">
-                <div className="flex-shrink-0">
-                  <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                  </svg>
-                </div>
-                <div className="ml-3">
-                  <p className="text-sm font-medium text-red-800">{error}</p>
-                </div>
+            {loadingProfile && (
+              <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                <p className="text-xs text-gray-600">Memeriksa metode pembayaran...</p>
               </div>
+            )}
+
+            <div className="space-y-2">
+              {/* Tampilkan QRIS hanya jika tersedia */}
+              {qrisAvailable && (
+                <label 
+                  className={`flex items-center p-3 border rounded-lg cursor-pointer transition-colors ${
+                    paymentMethod === 'QRIS_RESTAURANT' 
+                      ? 'border-primary-500 bg-primary-50' 
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                  onClick={() => setPaymentMethod('QRIS_RESTAURANT')}
+                >
+                  <input
+                    type="radio"
+                    name="paymentMethod"
+                    value="QRIS_RESTAURANT"
+                    checked={paymentMethod === 'QRIS_RESTAURANT'}
+                    onChange={() => setPaymentMethod('QRIS_RESTAURANT')}
+                    className="mr-2.5 text-primary-600 focus:ring-primary-500"
+                  />
+                  <div className="flex items-center gap-2 flex-1">
+                    <CreditCard className="w-4 h-4 text-primary-600" />
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">QRIS</div>
+                      <div className="text-xs text-gray-500">Bayar di tempat</div>
+                    </div>
+                  </div>
+                </label>
+              )}
+
+              {/* Kasir selalu tersedia */}
+              <label 
+                className={`flex items-center p-3 border rounded-lg cursor-pointer transition-colors ${
+                  paymentMethod === 'CASHIER' 
+                    ? 'border-primary-500 bg-primary-50' 
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+                onClick={() => setPaymentMethod('CASHIER')}
+              >
+                <input
+                  type="radio"
+                  name="paymentMethod"
+                  value="CASHIER"
+                  checked={paymentMethod === 'CASHIER'}
+                  onChange={() => setPaymentMethod('CASHIER')}
+                  className="mr-2.5 text-primary-600 focus:ring-primary-500"
+                />
+                <div className="flex items-center gap-2 flex-1">
+                  <Wallet className="w-4 h-4 text-primary-600" />
+                  <div>
+                    <div className="text-sm font-medium text-gray-900">Kasir</div>
+                    <div className="text-xs text-gray-500">Bayar di kasir</div>
+                  </div>
+                </div>
+              </label>
             </div>
-          )}
-
-          <div className="space-y-3">
-            <label 
-              className={`flex items-start p-4 border-2 rounded-xl cursor-pointer transition-all ${
-                paymentMethod === 'QRIS_RESTAURANT' 
-                  ? 'border-primary-500 bg-primary-50' 
-                  : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-              }`}
-              onClick={() => setPaymentMethod('QRIS_RESTAURANT')}
-            >
-              <input
-                type="radio"
-                name="paymentMethod"
-                value="QRIS_RESTAURANT"
-                checked={paymentMethod === 'QRIS_RESTAURANT'}
-                onChange={() => setPaymentMethod('QRIS_RESTAURANT')}
-                className="mt-1 mr-3 text-primary-600 focus:ring-primary-500"
-              />
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <CreditCard className="w-5 h-5 text-primary-600" />
-                  <div className="font-semibold text-gray-900">Bayar di Tempat (QRIS)</div>
-                </div>
-                <div className="text-xs text-gray-600">
-                  Scan QR code resto untuk pembayaran langsung
-                </div>
-              </div>
-            </label>
-
-            <label 
-              className={`flex items-start p-4 border-2 rounded-xl cursor-pointer transition-all ${
-                paymentMethod === 'CASHIER' 
-                  ? 'border-primary-500 bg-primary-50' 
-                  : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
-              }`}
-              onClick={() => setPaymentMethod('CASHIER')}
-            >
-              <input
-                type="radio"
-                name="paymentMethod"
-                value="CASHIER"
-                checked={paymentMethod === 'CASHIER'}
-                onChange={() => setPaymentMethod('CASHIER')}
-                className="mt-1 mr-3 text-primary-600 focus:ring-primary-500"
-              />
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <Wallet className="w-5 h-5 text-primary-600" />
-                  <div className="font-semibold text-gray-900">Bayar ke Kasir</div>
-                </div>
-                <div className="text-xs text-gray-600">
-                  Pesanan selesai, bayar langsung di kasir
-                </div>
-              </div>
-            </label>
           </div>
         </div>
+      </div>
 
-        {/* Submit Button */}
-        <Button
-          variant="primary"
-          className="w-full"
-          onClick={handleSubmit}
-          isLoading={loading}
-          disabled={!paymentMethod || loading}
-        >
-          <span>Konfirmasi Pesanan</span>
-        </Button>
+      {/* Fixed Bottom Button */}
+      <div className="bg-white border-t border-gray-200 px-4 py-3 flex-shrink-0">
+        <div className="max-w-md mx-auto">
+          <Button
+            variant="primary"
+            className="w-full"
+            onClick={handleSubmit}
+            isLoading={loading}
+            disabled={!paymentMethod || loading}
+          >
+            <span>Konfirmasi Pesanan</span>
+          </Button>
+        </div>
       </div>
     </div>
   )

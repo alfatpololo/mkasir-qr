@@ -16,7 +16,7 @@ export const CategoryTabs: React.FC<CategoryTabsProps> = ({
   onCategoryChange,
 }) => {
   return (
-    <div className="sticky top-[200px] z-30 bg-white border-b border-gray-100 pb-3 pt-4 shadow-sm">
+    <div className="bg-white border-b border-gray-100 pb-3 pt-4 shadow-sm">
       <div className="flex gap-2 overflow-x-auto pb-2 px-4 scrollbar-hide">
         <button
           onClick={() => onCategoryChange(null)}

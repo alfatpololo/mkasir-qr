@@ -96,6 +96,13 @@ export default function CheckoutFormPage() {
           setError('Nomor meja atau token tidak valid')
         } else {
           setError('') // Clear error jika valid
+          
+          // Simpan token/table ke localStorage untuk redirect nanti
+          if (parsed.isToken && parsed.rawToken) {
+            localStorage.setItem('tableToken', parsed.rawToken)
+          } else {
+            localStorage.setItem('tableNumber', String(parsed.tableNumber))
+          }
         }
         setValidatingTable(false)
       } catch (err: any) {
@@ -163,8 +170,8 @@ export default function CheckoutFormPage() {
                 customerPhone: phoneNumber,
               }))
               
-              // Jika semua data lengkap, langsung redirect ke halaman pilih metode pembayaran
-              if (name && email && phoneNumber && items.length > 0 && isMounted && tableInfo) {
+              // Jika data lengkap (name dan phone wajib, email opsional), langsung redirect
+              if (name && phoneNumber && items.length > 0 && isMounted && tableInfo) {
                 // Enkripsi data customer sebelum auto-redirect
                 try {
                   const encryptResponse = await fetch('/api/encrypt-customer-data', {
@@ -175,7 +182,7 @@ export default function CheckoutFormPage() {
                     body: JSON.stringify({
                       name: name.trim(),
                       phone: phoneNumber.trim(),
-                      email: email.trim(),
+                      email: email ? email.trim() : '',
                       note: undefined,
                     }),
                   })
@@ -317,20 +324,30 @@ export default function CheckoutFormPage() {
         return
       }
 
-      // Validate all fields
+      // Validate all fields (email optional)
       const nameValidation = validateName(formData.customerName)
       const phoneValidation = validatePhone(formData.customerPhone)
       const emailValidation = validateEmail(formData.customerEmail)
       const noteValidation = validateOrderNote(formData.orderNote)
 
-      if (!nameValidation.valid || !phoneValidation.valid || !emailValidation.valid || !noteValidation.valid) {
+      // Validasi field wajib (name dan phone)
+      if (!nameValidation.valid || !phoneValidation.valid || !noteValidation.valid) {
         setFieldErrors({
           customerName: nameValidation.error,
           customerPhone: phoneValidation.error,
-          customerEmail: emailValidation.error,
           orderNote: noteValidation.error,
         })
         setError('Mohon perbaiki data yang diisi')
+        setLoading(false)
+        return
+      }
+      
+      // Email opsional, tapi jika diisi harus valid format
+      if (!emailValidation.valid) {
+        setFieldErrors({
+          customerEmail: emailValidation.error,
+        })
+        setError('Format email tidak valid. Silakan perbaiki atau kosongkan email.')
         setLoading(false)
         return
       }
@@ -561,7 +578,7 @@ export default function CheckoutFormPage() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Email *
+                Email <span className="text-gray-400 text-xs">(opsional)</span>
               </label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -578,13 +595,12 @@ export default function CheckoutFormPage() {
                     }
                   }}
                   onBlur={(e) => validateField('customerEmail', e.target.value)}
-                  placeholder="email@example.com"
+                  placeholder="email@example.com (opsional)"
                   className={`w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 ${
                     fieldErrors.customerEmail
                       ? 'border-red-300 focus:ring-red-500'
                       : 'border-gray-300 focus:ring-primary-500'
                   }`}
-                  required
                   disabled={loadingCustomerData}
                   maxLength={100}
                 />
