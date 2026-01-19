@@ -1,0 +1,30 @@
+{
+  "table_number": 5,
+  "customer_name": "Jane Smith",
+  "customer_phone": "081987654321",
+  "customer_email": "jane.smith@example.com",
+  "payment_method": "CASHIER",
+  "items": [
+    {
+      "product_id": "101",
+      "product_name": "Ayam Geprek",
+      "quantity": 1,
+      "price": 15000,
+      "subtotal": 15000,
+      "note": "Pedas level 2"
+    },
+    {
+      "product_id": "102",
+      "product_name": "Nasi Putih",
+      "quantity": 1,
+      "price": 3000,
+      "subtotal": 3000
+    }
+  ],
+  "total": 18000,
+  "status": "WAITING_PAYMENT",
+  "metadata": {
+    "source": "pos",
+    "timestamp": "2024-01-15T11:45:00.000Z"
+  }
+}

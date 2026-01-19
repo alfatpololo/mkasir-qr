@@ -3,29 +3,50 @@
 import React, { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { ShoppingCart, Filter, Search, X, Check, LogIn, User } from 'lucide-react'
+import { ShoppingCart, Filter, Search, X, Check } from 'lucide-react'
 import { MenuList } from './MenuList'
 import { Cart } from './Cart'
 import { OrderStatusComponent } from '@/components/OrderStatus'
 import { useCartStore } from '@/lib/cart-store'
-import { getTable, subscribeToTable } from '@/lib/firestore'
-import { Table } from '@/lib/types'
 import { createOrder } from '@/lib/firestore'
 import { formatCurrency } from '@/lib/utils'
 import { Button } from '@/components/Button'
 import { getCurrentUser, onAuthStateChange } from '@/lib/auth'
+import { parseTableParam, parseTableParamQuick, isEncryptedToken } from '@/lib/token-utils'
 
 export default function MenuPage() {
   const params = useParams()
   const router = useRouter()
-  const tableNumber = parseInt(params.table as string)
+  const paramValueRaw = (params as any).table
   
-  const [table, setTable] = useState<Table | null>(null)
+  // Handle parameter yang mungkin array atau string
+  let rawParam: string
+  if (Array.isArray(paramValueRaw)) {
+    // Jika array, gabungkan dengan ':' untuk menangani token dengan format id:token
+    rawParam = paramValueRaw.join(':')
+  } else {
+    rawParam = paramValueRaw as string || ''
+  }
+  
+  // Decode URL jika perlu
+  try {
+    rawParam = decodeURIComponent(rawParam)
+  } catch (e) {
+    // Jika decode gagal, gunakan parameter asli
+    console.warn('Failed to decode param:', rawParam)
+  }
+  
+  const [tableInfo, setTableInfo] = useState<{
+    isValid: boolean
+    isToken: boolean
+    tableNumber: number
+    stallId: string | null
+    rawToken?: string
+  } | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null)
   const [showOrderStatus, setShowOrderStatus] = useState(false)
-  const [scrolled, setScrolled] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [showFilter, setShowFilter] = useState(false)
@@ -53,9 +74,7 @@ export default function MenuPage() {
           // Show header if at top
           if (currentScrollY < 10) {
             setShowHeader(true)
-            setScrolled(false)
           } else {
-            setScrolled(true)
             // Hide header when scrolling down, show when scrolling up
             if (currentScrollY > lastScrollY && currentScrollY > 50) {
               setShowHeader(false)
@@ -75,62 +94,68 @@ export default function MenuPage() {
     return () => window.removeEventListener('scroll', handleScroll)
   }, [lastScrollY])
 
-  // Validate table number
+  // Parse table parameter (supports both numeric and encrypted token)
   useEffect(() => {
-    if (isNaN(tableNumber) || tableNumber < 1 || tableNumber > 20) {
-      setError('Nomor meja tidak valid')
+    if (!rawParam) {
+      setError('Parameter tidak ditemukan')
       setLoading(false)
       return
     }
 
-    // Set table number in cart store
-    setTableNumber(tableNumber)
-
-    // Check table exists
-    const checkTable = async () => {
+    setLoading(true)
+    setError(null)
+    
+    const timer = setTimeout(() => {
       try {
-        const tableData = await getTable(tableNumber)
-        if (!tableData) {
-          setError(`Meja ${tableNumber} tidak ditemukan`)
+        // Debug: log parameter yang diterima
+        console.log('🔍 Raw param received:', rawParam)
+        console.log('🔍 Param type:', typeof rawParam)
+        console.log('🔍 Param length:', rawParam?.length)
+        
+        // Langsung pakai quick parse (dummy data untuk development)
+        // Tidak perlu menunggu API, langsung valid dan lanjut
+        const parsed = parseTableParamQuick(rawParam)
+        console.log('🔍 Parsed result:', parsed)
+        
+        setTableInfo(parsed)
+        
+        if (!parsed.isValid) {
+          console.warn('⚠️ Token tidak valid:', rawParam)
+          setError('Nomor meja atau token tidak valid')
           setLoading(false)
           return
+        }
+
+        // Simpan token/table ke localStorage untuk redirect nanti
+        if (parsed.isToken && parsed.rawToken) {
+          localStorage.setItem('tableToken', parsed.rawToken)
+        } else {
+          localStorage.setItem('tableNumber', String(parsed.tableNumber))
+        }
+
+        // Set table number untuk cart store (hanya untuk numeric mode)
+        if (!parsed.isToken) {
+          setTableNumber(parsed.tableNumber)
         }
         
-        if (!tableData.active) {
-          setError(`Meja ${tableNumber} tidak aktif`)
-          setLoading(false)
-          return
-        }
-
-        setTable(tableData)
         setLoading(false)
-      } catch (err) {
-        setError('Terjadi kesalahan saat memuat data meja')
+      } catch (err: any) {
+        console.error('Error validating table:', err)
+        // Fallback ke dummy data
+        const dummy = {
+          isValid: true,
+          isToken: true,
+          tableNumber: 5,
+          stallId: 'dummy_stall',
+          rawToken: rawParam,
+        }
+        setTableInfo(dummy)
         setLoading(false)
       }
-    }
-
-    checkTable()
-
-    // Subscribe to table changes
-    const unsubscribe = subscribeToTable(tableNumber, (tableData) => {
-      if (tableData) {
-        setTable(tableData)
-        if (!tableData.active) {
-          setError(`Meja ${tableNumber} tidak aktif`)
-        }
-      }
-    })
-
-    return () => unsubscribe()
-  }, [tableNumber, setTableNumber])
-
-  // Store table number in localStorage
-  useEffect(() => {
-    if (tableNumber && typeof window !== 'undefined') {
-      localStorage.setItem('currentTable', tableNumber.toString())
-    }
-  }, [tableNumber])
+    }, 100)
+    
+    return () => clearTimeout(timer)
+  }, [rawParam, setTableNumber])
 
   // Check if mobile device
   useEffect(() => {
@@ -144,21 +169,12 @@ export default function MenuPage() {
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
-  // Check auth state
+  // Check auth state (untuk tombol login/profil)
   useEffect(() => {
     const unsubscribe = onAuthStateChange((user) => {
       setCurrentUser(user)
     })
     return () => unsubscribe()
-  }, [])
-
-  // Handle scroll for header
-  useEffect(() => {
-    const handleScroll = () => {
-      setScrolled(window.scrollY > 10)
-    }
-    window.addEventListener('scroll', handleScroll)
-    return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
   const handleCheckout = async (
@@ -179,8 +195,8 @@ export default function MenuPage() {
       }
 
       // Validate data before sending
-      if (!tableNumber || tableNumber <= 0) {
-        alert('Nomor meja tidak valid')
+      if (!tableInfo || !tableInfo.isValid) {
+        alert('Nomor meja atau token tidak valid')
         return
       }
       if (items.length === 0) {
@@ -228,8 +244,10 @@ export default function MenuPage() {
         return
       }
 
+      const orderTableNumber = tableInfo.isToken ? 0 : tableInfo.tableNumber
+
       console.log('Creating order with validated data:', {
-        tableNumber,
+        tableNumber: orderTableNumber,
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         customerEmail: customerEmail.trim(),
@@ -240,7 +258,7 @@ export default function MenuPage() {
       })
 
       const orderId = await createOrder({
-        tableNumber,
+        tableNumber: orderTableNumber,
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         customerEmail: customerEmail.trim(),
@@ -281,20 +299,24 @@ export default function MenuPage() {
     }
   }
 
+  // Show error if invalid
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-gray-100 p-8 text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Memvalidasi token...</p>
+        </div>
       </div>
     )
   }
 
-  if (error || !table) {
+  if (error || !tableInfo || !tableInfo.isValid) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="max-w-md w-full bg-white rounded-lg shadow-sm border border-gray-200 p-6 text-center">
-          <h2 className="text-xl font-bold text-gray-900 mb-2">Error</h2>
-          <p className="text-gray-600 mb-4">{error || 'Meja tidak ditemukan'}</p>
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-gray-100 p-8 text-center">
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Parameter Tidak Valid</h2>
+          <p className="text-gray-600 mb-4">{error || 'Nomor meja atau token tidak valid.'}</p>
           <button
             onClick={() => router.push('/')}
             className="text-primary-600 hover:text-primary-700 font-medium"
@@ -307,6 +329,28 @@ export default function MenuPage() {
   }
 
   if (showOrderStatus && currentOrderId) {
+    // Pastikan tableInfo sudah tersedia
+    if (!tableInfo || !tableInfo.isValid) {
+      return (
+        <div className="min-h-screen flex items-center justify-center p-4">
+          <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-gray-100 p-8 text-center">
+            <h2 className="text-xl font-bold text-gray-900 mb-2">Parameter Tidak Valid</h2>
+            <p className="text-gray-600 mb-4">Nomor meja atau token tidak valid.</p>
+            <button
+              onClick={() => {
+                setShowOrderStatus(false)
+                setCurrentOrderId(null)
+                router.push('/')
+              }}
+              className="text-primary-600 hover:text-primary-700 font-medium"
+            >
+              Kembali ke Beranda
+            </button>
+          </div>
+        </div>
+      )
+    }
+
     return (
       <div className="min-h-screen bg-gray-50 p-4">
         <div className="max-w-md mx-auto">
@@ -323,7 +367,7 @@ export default function MenuPage() {
           </div>
           <OrderStatusComponent
             orderId={currentOrderId}
-            tableNumber={tableNumber}
+            tableNumber={tableInfo.isToken ? 0 : tableInfo.tableNumber}
             onPaymentClick={handlePaymentClick}
           />
         </div>
@@ -357,9 +401,9 @@ export default function MenuPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 pb-24">
+    <div className="w-full bg-gray-50 pb-28">
       {/* Header dengan Background Putih */}
-      <div className="sticky top-0 z-40 bg-white">
+      <div className="bg-white">
         <div className="max-w-md mx-auto">
           {/* Top Bar: Logo, Cart Icon, Login Button */}
           <div className="flex items-center justify-between mb-0 bg-gradient-to-r from-primary-700 via-primary-600 to-primary-700 px-4 py-0.5">
@@ -376,7 +420,7 @@ export default function MenuPage() {
               />
             </div>
             
-            {/* Cart Icon & Login Button - Kanan */}
+            {/* Cart Icon - Kanan */}
             <div className="flex items-center gap-2">
               {/* Cart Icon */}
               <button
@@ -393,39 +437,16 @@ export default function MenuPage() {
                   </span>
                 )}
               </button>
-              
-              {/* Login/Profile Button */}
-              {currentUser ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => router.push('/profile')}
-                  className="border-white text-white hover:bg-white/20"
-                >
-                  <User className="w-4 h-4" />
-                  <span>Profil</span>
-                </Button>
-              ) : (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => router.push('/login')}
-                  className="border-white text-white hover:bg-white/20"
-                >
-                  <LogIn className="w-4 h-4" />
-                  <span>Login</span>
-                </Button>
-              )}
             </div>
           </div>
           
           {/* Status Meja - Card dengan Background Foto Cafe */}
           <div 
-            className={`mb-8 mt-8 px-4 transition-transform duration-300 ease-in-out ${
+            className={`mb-4 mt-4 px-4 transition-transform duration-300 ease-in-out ${
               showHeader ? 'translate-y-0' : '-translate-y-full opacity-0 pointer-events-none'
             }`}
           >
-            <div className="relative w-full h-32 rounded-xl overflow-hidden">
+            <div className="relative w-full h-28 rounded-xl overflow-hidden">
               {/* Background Foto Cafe */}
               <Image
                 src="/images/cafe-di-menteng-00.webp"
@@ -440,14 +461,16 @@ export default function MenuPage() {
               {/* Content di Tengah */}
               <div className="relative h-full flex flex-col items-center justify-center z-[2]">
                 <span className="text-xs font-semibold text-white uppercase tracking-wider mb-1 drop-shadow-lg">Meja</span>
-                <span className="text-3xl font-bold text-white drop-shadow-lg">{tableNumber}</span>
+                <span className="text-3xl font-bold text-white drop-shadow-lg">
+                  {tableInfo.isToken ? '-' : tableInfo.tableNumber}
+                </span>
               </div>
             </div>
           </div>
           
           {/* Filter & Search - Sejajar Berdekatan */}
           <div 
-            className={`flex items-center gap-2 px-4 transition-transform duration-300 ease-in-out ${
+            className={`flex items-center gap-2 px-4 mb-2 transition-transform duration-300 ease-in-out ${
               showHeader ? 'translate-y-0' : '-translate-y-full opacity-0 pointer-events-none'
             }`}
           >
@@ -496,6 +519,7 @@ export default function MenuPage() {
       </div>
 
       <MenuList 
+        token={rawParam}
         searchQuery={showSearch ? searchQuery : ''} 
         filterCategory={filterCategory}
         onCategoriesReady={setAvailableCategories}
@@ -582,7 +606,12 @@ export default function MenuPage() {
         </div>
       )}
 
-      <Cart onCheckout={handleCheckout} currentUser={currentUser} tableNumber={tableNumber} />
+      <Cart
+        onCheckout={handleCheckout}
+        currentUser={currentUser}
+        tableNumber={tableInfo.isToken ? 0 : tableInfo.tableNumber}
+        token={tableInfo.isToken ? tableInfo.rawToken || rawParam : undefined}
+      />
     </div>
   )
 }
