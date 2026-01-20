@@ -5,11 +5,10 @@ import { useParams, useRouter } from 'next/navigation'
 import { User, Phone, Mail, ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/Button'
 import { useCartStore } from '@/lib/cart-store'
-import { onAuthStateChange } from '@/lib/auth'
-import { getCustomerByEmail } from '@/lib/firestore'
+import { getSession } from '@/lib/auth'
 import { formatCurrency } from '@/lib/utils'
-import { validateEmail, validatePhone, validateName, validateOrderNote, validateTableParam, checkRateLimit } from '@/lib/validation'
-import { parseTableParam, parseTableParamQuick } from '@/lib/token-utils'
+import { validateEmail, validatePhone, validateName, validateTableParam, checkRateLimit } from '@/lib/validation'
+import { parseTableParam, parseTableParamQuick, DEFAULT_MENU_TOKEN } from '@/lib/token-utils'
 import Image from 'next/image'
 
 export default function CheckoutFormPage() {
@@ -50,18 +49,24 @@ export default function CheckoutFormPage() {
   const [loadingCustomerData, setLoadingCustomerData] = useState(false)
   const [loading, setLoading] = useState(false)
   
+  // Get session user untuk check apakah sudah login
+  const sessionUser = getSession()
+  
+  const menuUrl = () => {
+    const cid = (sessionUser as any)?.customerId
+    return cid ? `/menu/${DEFAULT_MENU_TOKEN}?customer_id=${cid}` : `/menu/${DEFAULT_MENU_TOKEN}`
+  }
+  
   const [formData, setFormData] = useState({
     customerName: '',
     customerPhone: '',
     customerEmail: '',
-    orderNote: '',
   })
   
   const [fieldErrors, setFieldErrors] = useState<{
     customerName?: string
     customerPhone?: string
     customerEmail?: string
-    orderNote?: string
   }>({})
   
   const items = useCartStore((state) => state.items)
@@ -137,93 +142,38 @@ export default function CheckoutFormPage() {
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
-  // Check auth state and auto-fill form or auto-checkout
+  // Check session (API-based) dan auto-fill form
   useEffect(() => {
     if (!tableInfo) return
-    
     let isMounted = true
-    
-    const unsubscribe = onAuthStateChange(async (user) => {
-      if (!isMounted) return
+    const sessionUser = getSession()
+    if (sessionUser && items.length > 0) {
+      const name = sessionUser.displayName || ''
+      const phone = sessionUser.phoneNumber || ''
+      const email = sessionUser.email || ''
       
-      setCurrentUser(user)
+      setFormData(prev => ({
+        ...prev,
+        customerName: name,
+        customerPhone: phone,
+        customerEmail: email,
+      }))
+      setCurrentUser(sessionUser)
       
-      if (user && items.length > 0) {
-        const email = user.email || ''
-        const name = user.displayName || ''
+      // Jika data sudah lengkap dari session (nama dan phone), validasi otomatis
+      if (name && phone) {
+        const nameValidation = validateName(name)
+        const phoneValidation = validatePhone(phone)
+        const emailValidation = email ? validateEmail(email) : { valid: true, sanitized: email }
         
-        setFormData(prev => ({
-          ...prev,
-          customerName: name,
-          customerEmail: email,
-        }))
-        
-        // Get phone from Firestore
-        if (email) {
-          setLoadingCustomerData(true)
-          try {
-            const customer = await getCustomerByEmail(email)
-            const phoneNumber = customer?.phoneNumber
-            if (phoneNumber && isMounted) {
-              setFormData(prev => ({
-                ...prev,
-                customerPhone: phoneNumber,
-              }))
-              
-              // Jika data lengkap (name dan phone wajib, email opsional), langsung redirect
-              if (name && phoneNumber && items.length > 0 && isMounted && tableInfo) {
-                // Enkripsi data customer sebelum auto-redirect
-                try {
-                  const encryptResponse = await fetch('/api/encrypt-customer-data', {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                      name: name.trim(),
-                      phone: phoneNumber.trim(),
-                      email: email ? email.trim() : '',
-                      note: undefined,
-                    }),
-                  })
-
-                  if (encryptResponse.ok) {
-                    const encryptData = await encryptResponse.json()
-                    if (encryptData.success && encryptData.data?.token) {
-                      const redirectParam = tableInfo.rawToken || tableParam
-                      const params = new URLSearchParams({
-                        data: encryptData.data.token,
-                      })
-                      router.push(`/checkout/${redirectParam}/payment?${params.toString()}`)
-                      return
-                    }
-                  }
-                  // Jika enkripsi gagal, jangan redirect (biarkan user mengisi form manual)
-                  console.error('Encryption failed for auto-redirect, user must submit form manually')
-                  return
-                } catch (encryptErr) {
-                  console.error('Error encrypting customer data for auto-redirect:', encryptErr)
-                  // Jangan redirect jika enkripsi gagal
-                  return
-                }
-              }
-            }
-          } catch (error) {
-            console.error('Error getting customer data:', error)
-          } finally {
-            if (isMounted) {
-              setLoadingCustomerData(false)
-            }
-          }
+        // Clear errors jika data valid
+        if (nameValidation.valid && phoneValidation.valid && emailValidation.valid) {
+          setFieldErrors({})
+          setError('')
         }
       }
-    })
-    
-    return () => {
-      isMounted = false
-      unsubscribe()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => { isMounted = false }
   }, [items.length, tableInfo])
 
   // Redirect if cart is empty
@@ -231,12 +181,8 @@ export default function CheckoutFormPage() {
     if (!tableInfo) return
     
     if (items.length === 0) {
-      // Untuk token mode, redirect ke menu dengan token
-      if (tableInfo.isToken && tableInfo.rawToken) {
-        router.push(`/menu/${tableInfo.rawToken}`)
-      } else {
-        router.push(`/menu/${tableInfo.tableNumber}`)
-      }
+      // Redirect ke menu dengan default token + customer_id jika ada
+      router.push(menuUrl())
     }
   }, [items, tableInfo, router])
   
@@ -294,9 +240,6 @@ export default function CheckoutFormPage() {
       case 'customerEmail':
         validation = validateEmail(value)
         break
-      case 'orderNote':
-        validation = validateOrderNote(value)
-        break
     }
     
     if (validation) {
@@ -324,18 +267,29 @@ export default function CheckoutFormPage() {
         return
       }
 
+      // Jika user sudah login dan data dari session lengkap, gunakan data session
+      const sessionUser = getSession()
+      let finalName = formData.customerName
+      let finalPhone = formData.customerPhone
+      let finalEmail = formData.customerEmail
+      
+      if (sessionUser && sessionUser.displayName && sessionUser.phoneNumber) {
+        // Prioritaskan data dari session jika ada
+        finalName = sessionUser.displayName
+        finalPhone = sessionUser.phoneNumber
+        finalEmail = sessionUser.email || formData.customerEmail
+      }
+
       // Validate all fields (email optional)
-      const nameValidation = validateName(formData.customerName)
-      const phoneValidation = validatePhone(formData.customerPhone)
-      const emailValidation = validateEmail(formData.customerEmail)
-      const noteValidation = validateOrderNote(formData.orderNote)
+      const nameValidation = validateName(finalName)
+      const phoneValidation = validatePhone(finalPhone)
+      const emailValidation = finalEmail ? validateEmail(finalEmail) : { valid: true, sanitized: '' }
 
       // Validasi field wajib (name dan phone)
-      if (!nameValidation.valid || !phoneValidation.valid || !noteValidation.valid) {
+      if (!nameValidation.valid || !phoneValidation.valid) {
         setFieldErrors({
           customerName: nameValidation.error,
           customerPhone: phoneValidation.error,
-          orderNote: noteValidation.error,
         })
         setError('Mohon perbaiki data yang diisi')
         setLoading(false)
@@ -361,23 +315,36 @@ export default function CheckoutFormPage() {
       // Enkripsi data customer sebelum redirect
       try {
         console.log('🔐 Encrypting customer data before redirect...')
+        
+        // Pastikan semua sanitized values valid (gunakan data final)
+        const name = nameValidation.sanitized || finalName.trim()
+        const phone = phoneValidation.sanitized || finalPhone.trim()
+        const email = emailValidation.sanitized || finalEmail.trim() || ''
+        
+        if (!name || !phone) {
+          throw new Error('Nama dan nomor HP harus diisi')
+        }
+        
+        const payload = {
+          name,
+          phone,
+          email,
+        }
+        
+        console.log('🔐 Payload to encrypt:', payload)
+        
         const encryptResponse = await fetch('/api/encrypt-customer-data', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            name: nameValidation.sanitized,
-            phone: phoneValidation.sanitized,
-            email: emailValidation.sanitized,
-            note: noteValidation.sanitized || undefined,
-          }),
+          body: JSON.stringify(payload),
         })
 
         if (!encryptResponse.ok) {
-          const errorText = await encryptResponse.text()
-          console.error('❌ Encryption API error:', encryptResponse.status, errorText)
-          throw new Error('Gagal mengenkripsi data')
+          const errorData = await encryptResponse.json().catch(() => ({ error: 'Unknown error' }))
+          console.error('❌ Encryption API error:', encryptResponse.status, errorData)
+          throw new Error(errorData.error || 'Gagal mengenkripsi data')
         }
 
         const encryptData = await encryptResponse.json()
@@ -385,16 +352,30 @@ export default function CheckoutFormPage() {
         
         if (!encryptData.success || !encryptData.data?.token) {
           console.error('❌ Invalid encryption response:', encryptData)
-          throw new Error('Gagal mendapatkan token terenkripsi')
+          throw new Error(encryptData.error || 'Gagal mendapatkan token terenkripsi')
         }
 
         // Redirect dengan token terenkripsi
         const params = new URLSearchParams({
           data: encryptData.data.token,
         })
-        const redirectUrl = `/checkout/${tableParam}/payment?${params.toString()}`
+        
+        // Gunakan rawToken jika ada (untuk token mode), atau tableNumber
+        const redirectParam = tableInfo?.rawToken || tableInfo?.tableNumber?.toString() || tableParam
+        
+        // Encode parameter untuk URL (khusus untuk token yang mengandung ':')
+        const encodedParam = redirectParam.includes(':') 
+          ? redirectParam.split(':').map(part => encodeURIComponent(part)).join(':')
+          : encodeURIComponent(redirectParam)
+        
+        const redirectUrl = `/checkout/${encodedParam}/payment?${params.toString()}`
+        
         console.log('✅ Redirecting to:', redirectUrl)
-        router.push(redirectUrl)
+        console.log('✅ Redirect param:', redirectParam)
+        console.log('✅ Encoded param:', encodedParam)
+        
+        // Gunakan window.location untuk memastikan redirect berjalan
+        window.location.href = redirectUrl
       } catch (encryptErr: any) {
         console.error('❌ Error encrypting customer data:', encryptErr)
         setError('Gagal mengenkripsi data. Silakan coba lagi.')
@@ -488,7 +469,22 @@ export default function CheckoutFormPage() {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-md border border-gray-100 p-6">
-          <h2 className="font-bold text-gray-900 mb-4">Data Pembeli</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-bold text-gray-900">Data Pembeli</h2>
+            {sessionUser && formData.customerName && formData.customerPhone && (
+              <span className="text-xs text-primary-600 bg-primary-50 px-2 py-1 rounded-full">
+                ✓ Data dari akun (tidak perlu diisi)
+              </span>
+            )}
+          </div>
+          
+          {sessionUser && formData.customerName && formData.customerPhone && (
+            <div className="mb-4 p-3 bg-primary-50 border border-primary-200 rounded-lg">
+              <p className="text-sm text-primary-800">
+                Data Anda sudah terisi otomatis dari akun. Anda dapat langsung melanjutkan ke pembayaran.
+              </p>
+            </div>
+          )}
 
           {error && (
             <div className="mb-4 p-4 bg-red-50 border-l-4 border-red-500 rounded-lg">
@@ -532,7 +528,8 @@ export default function CheckoutFormPage() {
                       : 'border-gray-300 focus:ring-primary-500'
                   }`}
                   required
-                  disabled={loadingCustomerData}
+                  disabled={loadingCustomerData || (sessionUser && formData.customerName && formData.customerPhone)}
+                  readOnly={sessionUser && formData.customerName && formData.customerPhone}
                   maxLength={100}
                 />
               </div>
@@ -567,7 +564,8 @@ export default function CheckoutFormPage() {
                       : 'border-gray-300 focus:ring-primary-500'
                   }`}
                   required
-                  disabled={loadingCustomerData}
+                  disabled={loadingCustomerData || (sessionUser && formData.customerName && formData.customerPhone)}
+                  readOnly={sessionUser && formData.customerName && formData.customerPhone}
                   maxLength={15}
                 />
               </div>
@@ -601,7 +599,8 @@ export default function CheckoutFormPage() {
                       ? 'border-red-300 focus:ring-red-500'
                       : 'border-gray-300 focus:ring-primary-500'
                   }`}
-                  disabled={loadingCustomerData}
+                  disabled={loadingCustomerData || (sessionUser && formData.customerName && formData.customerPhone)}
+                  readOnly={sessionUser && formData.customerName && formData.customerPhone}
                   maxLength={100}
                 />
               </div>
@@ -610,40 +609,6 @@ export default function CheckoutFormPage() {
               )}
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Catatan Pesanan <span className="text-gray-400 text-xs font-normal">(opsional)</span>
-              </label>
-              <textarea
-                value={formData.orderNote}
-                onChange={(e) => {
-                  const value = e.target.value.slice(0, 200) // Max length
-                  setFormData({ ...formData, orderNote: value })
-                  if (value.length > 0) {
-                    validateField('orderNote', value)
-                  } else {
-                    setFieldErrors(prev => ({ ...prev, orderNote: undefined }))
-                  }
-                }}
-                onBlur={(e) => validateField('orderNote', e.target.value)}
-                placeholder="Contoh: Makan di tempat, tidak pedas, tanpa bawang, dll..."
-                rows={3}
-                maxLength={200}
-                className={`w-full px-4 py-3 border rounded-xl focus:outline-none focus:ring-2 focus:border-transparent resize-none text-sm ${
-                  fieldErrors.orderNote
-                    ? 'border-red-300 focus:ring-red-500'
-                    : 'border-gray-300 focus:ring-primary-500'
-                }`}
-              />
-              <div className="flex items-center justify-between mt-1.5">
-                <p className="text-xs text-gray-500">
-                  {formData.orderNote.length}/200 karakter
-                </p>
-                {fieldErrors.orderNote && (
-                  <p className="text-xs text-red-600">{fieldErrors.orderNote}</p>
-                )}
-              </div>
-            </div>
           </div>
 
           <div className="mt-6 pt-6 border-t border-gray-200">

@@ -5,20 +5,27 @@ import { useParams, useRouter } from 'next/navigation'
 import { CheckCircle2, FileText, ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/Button'
 import Image from 'next/image'
+import { getSession } from '@/lib/auth'
+import { DEFAULT_MENU_TOKEN } from '@/lib/token-utils'
 
 export default function OrderSuccessPage() {
   const params = useParams()
   const router = useRouter()
   const orderId = params.orderId as string
+  const menuUrl = () => {
+    const sessionUser = getSession()
+    const cid = (sessionUser as any)?.customerId
+    return cid ? `/menu/${DEFAULT_MENU_TOKEN}?customer_id=${cid}` : `/menu/${DEFAULT_MENU_TOKEN}`
+  }
 
   const handleRincianPesanan = () => {
-    // Redirect ke halaman riwayat pesanan dengan orderId
-    router.push(`/my-orders?orderId=${orderId}`)
+    // Redirect ke halaman profile (riwayat pesanan ada di profile)
+    router.push('/profile')
   }
 
   const handleKembaliKeMenu = () => {
-    // Redirect ke menu (bisa disesuaikan dengan table number jika diperlukan)
-    router.push('/menu/1')
+    // Redirect ke menu dengan default token
+    router.push(menuUrl())
   }
 
   return (

@@ -68,17 +68,17 @@ export const MenuCard: React.FC<MenuCardProps> = ({ product }) => {
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-lg transition-all duration-300 group active:scale-[0.98]">
+    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden hover:border-gray-300 transition-all duration-200 group">
       <div className="relative aspect-square bg-gray-50 overflow-hidden">
         {imageUrl && !imageError ? (
           <>
             {imageLoading && (
-              <div className="absolute inset-0 bg-gradient-to-br from-gray-100 to-gray-200 animate-pulse" />
+              <div className="absolute inset-0 bg-gray-100 animate-pulse" />
             )}
             <img
               src={imageUrl}
               alt={product.name}
-              className={`w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 ${
+              className={`w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 ${
                 imageLoading ? 'opacity-0' : 'opacity-100'
               }`}
               onError={handleImageError}
@@ -87,73 +87,64 @@ export const MenuCard: React.FC<MenuCardProps> = ({ product }) => {
             />
           </>
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
-            <div className="text-center">
-              <div className="w-20 h-20 mx-auto mb-2 rounded-xl bg-white shadow-md flex items-center justify-center">
-                <span className="text-4xl">🍽️</span>
-              </div>
-              <p className="text-xs text-gray-400 font-medium">No Image</p>
-            </div>
+          <div className="w-full h-full flex items-center justify-center bg-gray-50">
+            <span className="text-4xl">🍽️</span>
           </div>
         )}
         {isOutOfStock && (
-          <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-10">
-            <div className="bg-red-500 text-white px-4 py-2 rounded-xl font-bold shadow-xl">
+          <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-10">
+            <span className="text-sm font-medium text-gray-500 bg-white px-3 py-1.5 rounded-full border border-gray-200">
               Habis
-            </div>
+            </span>
           </div>
         )}
       </div>
       
-      <div className="p-4">
-        <h3 className="font-bold text-gray-900 mb-2 text-base line-clamp-2 min-h-[2.5rem] leading-tight">
+      <div className="p-3">
+        <h3 className="font-medium text-gray-900 mb-1.5 text-sm line-clamp-2 min-h-[2.5rem] leading-snug">
           {product.name}
         </h3>
         
         <div className="flex items-center justify-between mb-3">
-          <p className="text-xl font-bold text-primary-600">
+          <p className="text-base font-semibold text-gray-900">
             {formatCurrency(product.price)}
           </p>
           {product.stock > 0 && product.stock <= 5 && (
-            <span className="text-xs font-medium text-orange-600 bg-orange-50 px-2 py-1 rounded-lg">
+            <span className="text-xs font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded">
               Stok: {product.stock}
             </span>
           )}
         </div>
         
         {isInCart ? (
-          // Kontrol quantity jika sudah ada di keranjang
-          <div className="flex items-center gap-2 bg-primary-50 rounded-xl border-2 border-primary-200 p-1">
+          <div className="flex items-center gap-1.5 bg-gray-50 rounded-lg p-1 border border-gray-200">
             <button
               onClick={handleDecrease}
               disabled={isOutOfStock}
-              className="flex-1 flex items-center justify-center p-2.5 bg-white rounded-lg hover:bg-primary-100 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+              className="flex-1 flex items-center justify-center p-2 bg-white rounded hover:bg-gray-100 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <Minus className="w-5 h-5 text-primary-600" />
+              <Minus className="w-4 h-4 text-gray-700" />
             </button>
-            <div className="flex-1 text-center">
-              <span className="text-lg font-bold text-primary-700">{quantity}</span>
+            <div className="flex-1 text-center min-w-[2rem]">
+              <span className="text-sm font-semibold text-gray-900">{quantity}</span>
             </div>
             <button
               onClick={handleIncrease}
               disabled={isOutOfStock || (product.stock > 0 && quantity >= product.stock)}
-              className="flex-1 flex items-center justify-center p-2.5 bg-white rounded-lg hover:bg-primary-100 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+              className="flex-1 flex items-center justify-center p-2 bg-white rounded hover:bg-gray-100 active:scale-95 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <Plus className="w-5 h-5 text-primary-600" />
+              <Plus className="w-4 h-4 text-gray-700" />
             </button>
           </div>
         ) : (
-          // Tombol Tambah jika belum ada di keranjang
-          <Button
-            variant="primary"
-            size="md"
-            className="w-full py-3 shadow-sm hover:shadow-md transition-shadow"
+          <button
             onClick={handleAddToCart}
             disabled={isOutOfStock}
+            className="w-full py-2.5 bg-gradient-to-r from-primary-600 to-primary-500 text-white rounded-lg hover:from-primary-700 hover:to-primary-600 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5 text-sm font-medium shadow-sm"
           >
-            <Plus className="w-5 h-5" />
-            <span className="font-semibold">Tambah</span>
-          </Button>
+            <Plus className="w-4 h-4" />
+            <span>Tambah</span>
+          </button>
         )}
       </div>
     </div>

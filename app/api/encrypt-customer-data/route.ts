@@ -8,10 +8,15 @@ const IV_LENGTH = 16 // 16 byte untuk AES
 // Generate key 32 byte dari ENV
 const getKey = () => {
   const baseKey = process.env.ENCRYPTION_KEY
+  
+  // Fallback untuk development jika ENCRYPTION_KEY tidak di-set
   if (!baseKey || baseKey === 'ganti_encryption_key_di_env_anda') {
-    console.error('ENCRYPTION_KEY not set or using default value!')
-    throw new Error('ENCRYPTION_KEY environment variable is not configured')
+    console.warn('⚠️ ENCRYPTION_KEY not set, using development fallback key')
+    // Development fallback key (JANGAN gunakan di production!)
+    const devKey = 'dev_encryption_key_32_bytes_long_for_testing_only'
+    return crypto.createHash('sha256').update(devKey).digest().slice(0, 32)
   }
+  
   return crypto.createHash('sha256').update(String(baseKey)).digest().slice(0, 32)
 }
 
@@ -36,8 +41,13 @@ function encryptCustomerData(data: {
     // Format: "iv_hex:encrypted_hex"
     return `${iv.toString('hex')}:${encrypted}`
   } catch (error: any) {
-    console.error('Encryption error:', error)
-    throw new Error('Failed to encrypt customer data')
+    console.error('❌ Encryption error:', error)
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    })
+    throw new Error(`Failed to encrypt customer data: ${error.message}`)
   }
 }
 
@@ -70,7 +80,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Enkripsi data - email bisa kosong
+    // Note opsional, jika ada harus string
+    if (note !== undefined && note !== null && typeof note !== 'string') {
+      return NextResponse.json(
+        { success: false, error: 'Note must be a string' },
+        { status: 400 }
+      )
+    }
+
+    // Enkripsi data - email dan note bisa kosong/undefined
     const encryptedToken = encryptCustomerData({
       name: name.trim(),
       phone: phone.trim(),
@@ -85,9 +103,18 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error: any) {
-    console.error('Error encrypting customer data:', error)
+    console.error('❌ Error encrypting customer data:', error)
+    console.error('Error stack:', error.stack)
+    
+    // Return error message yang lebih informatif
+    const errorMessage = error.message || 'Internal server error'
+    
     return NextResponse.json(
-      { success: false, error: error.message || 'Internal server error' },
+      { 
+        success: false, 
+        error: errorMessage,
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      },
       { status: 500 }
     )
   }

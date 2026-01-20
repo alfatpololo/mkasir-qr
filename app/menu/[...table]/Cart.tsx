@@ -149,39 +149,39 @@ export const Cart: React.FC<CartProps> = ({ onCheckout, currentUser, tableNumber
         <div className="max-w-md mx-auto">
           {itemCount === 0 ? (
             // Tampilan ketika keranjang kosong
-            <div className="w-full p-4 flex items-center justify-center gap-3">
-              <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center">
-                <ShoppingCart className="w-5 h-5 text-gray-400" />
+            <div className="w-full p-2.5 flex items-center justify-center gap-2">
+              <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center">
+                <ShoppingCart className="w-4 h-4 text-gray-400" />
               </div>
-              <p className="text-sm font-medium text-gray-500">Keranjang masih kosong</p>
+              <p className="text-xs font-medium text-gray-500">Keranjang masih kosong</p>
             </div>
           ) : (
             // Tampilan ketika ada item di keranjang
             <button
               data-cart-trigger
               onClick={() => setIsOpen(true)}
-              className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+              className="w-full p-2.5 flex items-center justify-between hover:bg-gray-50 transition-colors"
             >
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3">
                 <div className="relative">
-                  <div className="w-12 h-12 bg-gradient-to-br from-primary-500 to-primary-600 rounded-xl flex items-center justify-center shadow-md">
-                    <ShoppingCart className="w-6 h-6 text-white" />
+                  <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-primary-600 rounded-lg flex items-center justify-center shadow-sm">
+                    <ShoppingCart className="w-5 h-5 text-white" />
                   </div>
                   {itemCount > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-6 h-6 flex items-center justify-center shadow-lg border-2 border-white">
+                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center shadow-md border-2 border-white">
                       {itemCount}
                     </span>
                   )}
                 </div>
                 <div className="text-left">
-                  <p className="text-xs font-medium text-gray-500">{itemCount} item di keranjang</p>
-                  <p className="text-xl font-bold bg-gradient-to-r from-primary-600 to-primary-700 bg-clip-text text-transparent">
+                  <p className="text-xs font-medium text-gray-500">{itemCount} item</p>
+                  <p className="text-base font-bold bg-gradient-to-r from-primary-600 to-primary-700 bg-clip-text text-transparent">
                     {formatCurrency(total)}
                   </p>
                 </div>
               </div>
-              <Button variant="primary" size="md" className="shadow-md px-6 py-3 font-bold">
-                <span className="font-semibold">Lihat & Proses</span>
+              <Button variant="primary" size="sm" className="shadow-sm px-4 py-2 text-sm font-semibold">
+                <span>Lihat</span>
               </Button>
             </button>
           )}

@@ -397,6 +397,7 @@ export interface Customer {
   email: string
   displayName: string
   phoneNumber?: string
+  password?: string // Hashed password
   photoURL?: string
   createdAt: Timestamp
   updatedAt: Timestamp
@@ -428,7 +429,8 @@ export const createOrUpdateCustomer = async (
   }
   
   if (phoneNumber) {
-    customerData.phoneNumber = phoneNumber
+    // Normalize phone number (remove spaces, dashes, parentheses)
+    customerData.phoneNumber = phoneNumber.replace(/\s|-|\(|\)/g, '')
   }
   
   // Jika sudah ada berdasarkan email atau UID, update
@@ -473,6 +475,19 @@ export const subscribeToAllCustomers = (
 export const getCustomerByEmail = async (email: string): Promise<Customer | null> => {
   const customersRef = collection(db, 'customers')
   const q = query(customersRef, where('email', '==', email))
+  const snapshot = await getDocs(q)
+  
+  if (snapshot.empty) return null
+  
+  const doc = snapshot.docs[0]
+  return { id: doc.id, ...doc.data() } as Customer
+}
+
+export const getCustomerByPhone = async (phoneNumber: string): Promise<Customer | null> => {
+  const customersRef = collection(db, 'customers')
+  // Normalize phone number (remove spaces, dashes, etc)
+  const normalizedPhone = phoneNumber.replace(/\s|-|\(|\)/g, '')
+  const q = query(customersRef, where('phoneNumber', '==', normalizedPhone))
   const snapshot = await getDocs(q)
   
   if (snapshot.empty) return null

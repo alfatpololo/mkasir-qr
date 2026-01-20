@@ -2,6 +2,9 @@
  * Utility functions untuk handle token terenkripsi
  */
 
+// Default token untuk redirect ke menu
+export const DEFAULT_MENU_TOKEN = '55f8ea03be564f2eb42df9cc85fe4315:7849a63532888c158a26034be95d5976'
+
 export interface DecryptedToken {
   tableNumber: number
   stallId: string | null

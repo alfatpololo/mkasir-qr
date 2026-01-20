@@ -4,17 +4,17 @@ import React, { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { LogOut, User, Mail, Phone, Package, Calendar, DollarSign } from 'lucide-react'
 import { Button } from '@/components/Button'
-import { signOutCustomer, onAuthStateChange, getCurrentUser } from '@/lib/auth'
-import { subscribeToCustomerOrders, getCustomerStats } from '@/lib/customer-firestore'
-import { getCustomerByEmail } from '@/lib/firestore'
-import { Order } from '@/lib/types'
+import { signOutCustomerAPI, getSession, getStoredPassword } from '@/lib/auth'
+import { getCustomerRiwayat } from '@/lib/pos-api'
+import { DEFAULT_MENU_TOKEN } from '@/lib/token-utils'
+import { useCartStore } from '@/lib/cart-store'
 import { formatCurrency } from '@/lib/utils'
 import Image from 'next/image'
 
 export default function ProfilePage() {
   const router = useRouter()
+  const clearCart = useCartStore((state) => state.clearCart)
   const [user, setUser] = useState<any>(null)
-  const [orders, setOrders] = useState<Order[]>([])
   const [stats, setStats] = useState({
     totalOrders: 0,
     totalSpent: 0,
@@ -23,6 +23,12 @@ export default function ProfilePage() {
   })
   const [loading, setLoading] = useState(true)
   const [isMobile, setIsMobile] = useState(true)
+
+  const menuUrl = () => {
+    const sessionUser = getSession()
+    const cid = (sessionUser as any)?.customerId
+    return cid ? `/menu/${DEFAULT_MENU_TOKEN}?customer_id=${cid}` : `/menu/${DEFAULT_MENU_TOKEN}`
+  }
 
   // Check if mobile device
   useEffect(() => {
@@ -36,68 +42,150 @@ export default function ProfilePage() {
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChange(async (currentUser) => {
-      if (!currentUser) {
-        router.push('/login')
-        return
-      }
+  // Function to load riwayat
+  const loadRiwayat = () => {
+    const sessionUser = getSession()
+    const storedPassword = getStoredPassword()
+    
+    // Check session - password might be empty for phone-only login
+    if (!sessionUser || !sessionUser.customerId) {
+      console.warn('⚠️ No session found, redirecting to menu')
+      router.push(menuUrl())
+      return
+    }
+    
+    setUser(sessionUser)
+    setLoading(true)
+    
+    // Helper to fetch all pages
+    const fetchAllRiwayat = async () => {
+      const pageSize = 10
+      let page = 1
+      let allData: any[] = []
+      let totalData = 0
+      let totalPages = 1
       
-      setUser(currentUser)
-      
-      // Get customer data from Firestore to get phone number
-      const email = currentUser.email || ''
-      let phone: string | undefined = undefined
-      
-      // Try to get phone from Firestore customer data
-      if (email) {
-        try {
-          const customerData = await getCustomerByEmail(email)
-          if (customerData?.phoneNumber) {
-            phone = customerData.phoneNumber
-          }
-        } catch (error) {
-          console.error('Error getting customer data:', error)
-        }
-      }
-      
-      // Fallback to Firebase Auth phone if available
-      if (!phone && (currentUser as any).phoneNumber) {
-        phone = (currentUser as any).phoneNumber
-      }
-      
-      console.log('Profile: Loading orders for email:', email, 'phone:', phone)
-      
-      const unsubscribeOrders = subscribeToCustomerOrders(email, phone, (ordersData) => {
-        console.log('Profile: Orders received:', ordersData.length)
-        setOrders(ordersData)
-        setLoading(false)
+      try {
+        // For phone-only login, use default password '000000'
+        const kode = storedPassword || '000000'
+        console.log(`📋 Starting fetch riwayat for customerId: ${sessionUser.customerId}, kode: ${kode ? '***' : 'EMPTY'}`)
         
-        // Update stats when orders change
-        getCustomerStats(email, phone).then((newStats) => {
-          console.log('Profile: Stats updated:', newStats)
-          setStats(newStats)
+        while (true) {
+          console.log(`📋 Fetching riwayat page ${page}...`)
+          const riwayat = await getCustomerRiwayat(
+            sessionUser.customerId!,
+            kode,
+            page,
+            pageSize
+          )
+          
+          console.log(`📋 Riwayat page ${page} full response:`, JSON.stringify(riwayat, null, 2))
+          
+          // API response structure: { status: "Success", data: [...] }
+          const dataArr = riwayat.data || []
+          
+          if (dataArr.length === 0) {
+            console.log(`📋 No more data at page ${page}, stopping...`)
+            break
+          }
+          
+          allData = [...allData, ...dataArr]
+          
+          console.log(`📋 Page ${page}: received ${dataArr.length} items, total so far: ${allData.length}`)
+          
+          // Break jika data yang diterima kurang dari pageSize (berarti sudah di halaman terakhir)
+          if (dataArr.length < pageSize) {
+            console.log(`📋 Last page reached (received ${dataArr.length} < ${pageSize}), stopping...`)
+            break
+          }
+          
+          page += 1
+        }
+      } catch (error) {
+        console.error('❌ Error fetching riwayat:', error)
+        throw error
+      }
+      
+      console.log('📋 Final riwayat data:')
+      console.log('📋 Total data from API:', totalData)
+      console.log('📋 Aggregated length:', allData.length)
+      console.log('📋 All orders:', JSON.stringify(allData, null, 2))
+      console.log('📋 Sample orders (first 3):', allData.slice(0, 3))
+      
+      // Calculate stats from riwayat (tidak perlu simpan data, cukup untuk stats)
+      if (allData.length > 0) {
+        const totalOrders = allData.length
+        const totalSpent = allData.reduce((sum: number, order: any) => {
+          // API structure: { id, nomor_transaksi, jumlah_total, dll }
+          const orderTotal = order.jumlah_total || 0
+          console.log(`💰 Order ${order.id || order.nomor_transaksi || 'unknown'}: total=${orderTotal}, full order:`, order)
+          return sum + Number(orderTotal)
+        }, 0)
+        
+        const firstDate = allData[0]?.waktu_pesan || allData[0]?.waktu_bayar
+        
+        console.log('📊 Stats calculated:', {
+          totalOrders,
+          totalSpent,
+          firstDate,
+          allDataLength: allData.length
         })
+        
+        setStats({
+          totalOrders,
+          totalSpent,
+          favoriteCategory: null,
+          lastOrderDate: firstDate ? new Date(firstDate) : null
+        })
+      } else {
+        console.warn('⚠️ No riwayat data found')
+        setStats({
+          totalOrders: 0,
+          totalSpent: 0,
+          favoriteCategory: null,
+          lastOrderDate: null
+        })
+      }
+    }
+    
+    fetchAllRiwayat()
+      .catch((error) => {
+        console.error('❌ Failed to load riwayat from API:', error)
       })
-      
-      // Get initial stats
-      const initialStats = await getCustomerStats(email, phone)
-      console.log('Profile: Initial stats:', initialStats)
-      setStats(initialStats)
-      
-      return () => unsubscribeOrders()
-    })
+      .finally(() => setLoading(false))
+  }
 
-    return () => unsubscribe()
+  useEffect(() => {
+    loadRiwayat()
   }, [router])
+  
+  // Refresh riwayat when page becomes visible (user might have completed an order in another tab)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('🔄 Page visible, refreshing riwayat...')
+        loadRiwayat()
+      }
+    }
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [])
 
   const handleLogout = async () => {
     try {
-      await signOutCustomer()
-      // Redirect to menu page (POS) instead of login
-      router.push('/menu/1')
+      // Clear API session
+      await signOutCustomerAPI()
+      // Clear cart saat logout
+      clearCart()
+      // Redirect to menu page
+      router.push(menuUrl())
     } catch (error) {
       console.error('Error logging out:', error)
+      // Clear cart anyway
+      clearCart()
+      // Redirect anyway
+      router.push(menuUrl())
     }
   }
 
@@ -167,7 +255,7 @@ export default function ProfilePage() {
         <div className="max-w-md mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <button
-              onClick={() => router.push('/menu/1')}
+              onClick={() => router.push(menuUrl())}
               className="p-2 hover:bg-white/10 rounded-lg transition-colors"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -199,6 +287,11 @@ export default function ProfilePage() {
                 {user?.displayName || 'Customer'}
               </h2>
               <p className="text-sm text-gray-600">{user?.email}</p>
+              {user?.customerId && (
+                <p className="text-xs text-gray-500 mt-1">
+                  ID: {user.customerId}
+                </p>
+              )}
             </div>
           </div>
 
@@ -241,67 +334,29 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* Orders History */}
+        {/* Button to My Orders */}
         <div className="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden">
-          <div className="p-4 border-b border-gray-100">
-            <h3 className="font-bold text-gray-900">Riwayat Pesanan</h3>
-          </div>
-
-          <div className="divide-y divide-gray-100">
-            {orders.length === 0 ? (
-              <div className="p-12 text-center">
-                <Package className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-                <p className="text-gray-600 font-medium">Belum ada pesanan</p>
-                <p className="text-sm text-gray-400 mt-1">Mulai pesan dari menu restoran</p>
-              </div>
-            ) : (
-              orders.map((order) => (
-                <div key={order.id} className="p-4 hover:bg-gray-50 transition-colors">
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <p className="font-semibold text-gray-900 mb-1">
-                        Order #{order.id.slice(0, 8)}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {formatDate(order.createdAt)}
-                      </p>
-                    </div>
-                    {getStatusBadge(order.status)}
-                  </div>
-
-                  <div className="mb-2 space-y-1">
-                    {order.items?.slice(0, 2).map((item, idx) => {
-                      // Calculate proportional price based on qty
-                      const totalQty = order.items?.reduce((sum, i) => sum + i.qty, 0) || 1
-                      const itemPrice = totalQty > 0 ? (order.total || 0) * (item.qty / totalQty) : 0
-                      return (
-                        <div key={idx} className="flex items-center justify-between text-sm">
-                          <span className="text-gray-600">
-                            {item.qty}x {item.name}
-                          </span>
-                          <span className="text-gray-900 font-medium">
-                            {formatCurrency(itemPrice)}
-                          </span>
-                        </div>
-                      )
-                    })}
-                    {order.items && order.items.length > 2 && (
-                      <p className="text-xs text-gray-500">
-                        +{order.items.length - 2} item lainnya
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="pt-2 border-t border-gray-100 flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Total</span>
-                    <span className="text-lg font-bold text-primary-600">
-                      {formatCurrency(order.total || 0)}
-                    </span>
-                  </div>
+          <button
+            onClick={() => router.push('/my-orders')}
+            className="w-full p-6 text-left hover:bg-gray-50 transition-colors"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-primary-100 rounded-lg flex items-center justify-center">
+                  <Package className="w-6 h-6 text-primary-600" />
                 </div>
-              ))
-            )}
-          </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 mb-1">Riwayat Pesanan</h3>
+                  <p className="text-sm text-gray-500">
+                    Lihat semua pesanan Anda
+                  </p>
+                </div>
+              </div>
+              <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </div>
+          </button>
         </div>
       </div>
     </div>

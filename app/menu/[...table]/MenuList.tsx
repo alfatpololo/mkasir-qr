@@ -3,7 +3,6 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { Product } from '@/lib/types'
 import { MenuCard } from '@/components/MenuCard'
-import { CategoryTabs } from '@/components/CategoryTabs'
 
 // Base URL API backend
 const API_BASE_URL = 'https://mkasir-fnb-dev.tip2.co/api/v1'
@@ -12,6 +11,7 @@ interface MenuListProps {
   token: string
   searchQuery?: string
   filterCategory?: string | null
+  activeCategory?: string | null
   onCategoriesReady?: (categories: string[]) => void
 }
 
@@ -19,10 +19,14 @@ export const MenuList: React.FC<MenuListProps> = ({
   token,
   searchQuery = '', 
   filterCategory,
+  activeCategory: externalActiveCategory,
   onCategoriesReady
 }) => {
   const [products, setProducts] = useState<Product[]>([])
-  const [activeCategory, setActiveCategory] = useState<string | null>(null)
+  const [internalActiveCategory, setInternalActiveCategory] = useState<string | null>(null)
+  
+  // Use external activeCategory if provided, otherwise use internal
+  const activeCategory = externalActiveCategory !== undefined ? externalActiveCategory : internalActiveCategory
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [page, setPage] = useState<number>(1)
@@ -126,9 +130,9 @@ export const MenuList: React.FC<MenuListProps> = ({
     // Filter by filterCategory (dari modal filter)
     if (filterCategory) {
       filtered = filtered.filter((p) => p.category === filterCategory)
-      // Sinkronkan activeCategory dengan filter
-      if (activeCategory !== filterCategory) {
-        setActiveCategory(filterCategory)
+      // Sinkronkan internal activeCategory dengan filter jika tidak ada external
+      if (externalActiveCategory === undefined && internalActiveCategory !== filterCategory) {
+        setInternalActiveCategory(filterCategory)
       }
     }
     
@@ -188,13 +192,7 @@ export const MenuList: React.FC<MenuListProps> = ({
 
   return (
     <div className="max-w-md mx-auto">
-      <CategoryTabs
-        categories={categories}
-        activeCategory={activeCategory}
-        onCategoryChange={setActiveCategory}
-      />
-
-      <div className="px-4 pb-28">
+      <div className="px-3 pb-20 pt-2">
         {filteredProducts.length === 0 ? (
           <div className="text-center py-20">
             <div className="w-24 h-24 mx-auto mb-5 rounded-full bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center shadow-lg">
@@ -207,7 +205,7 @@ export const MenuList: React.FC<MenuListProps> = ({
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2.5">
               {filteredProducts.map((product) => (
                 <MenuCard key={product.id} product={product} />
               ))}

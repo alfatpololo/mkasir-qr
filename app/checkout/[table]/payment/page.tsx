@@ -8,8 +8,9 @@ import { useCartStore } from '@/lib/cart-store'
 import { createOrder } from '@/lib/firestore'
 import { formatCurrency } from '@/lib/utils'
 import { validateEmail, validatePhone, validateName, validateOrderNote, checkRateLimit } from '@/lib/validation'
-import { parseTableParam, parseTableParamQuick } from '@/lib/token-utils'
+import { parseTableParam, parseTableParamQuick, DEFAULT_MENU_TOKEN } from '@/lib/token-utils'
 import { buildMejaTransaksiPayload, sendTransactionToMeja, getMejaProfile, buildQRISImageURL } from '@/lib/pos-api'
+import { getSession } from '@/lib/auth'
 import Image from 'next/image'
 
 function PaymentMethodContent() {
@@ -53,6 +54,11 @@ function PaymentMethodContent() {
   const [completedOrderId, setCompletedOrderId] = useState<string | null>(null)
   const [posOrderId, setPosOrderId] = useState<string | null>(null)
   const [posOrderNumber, setPosOrderNumber] = useState<string | null>(null)
+  const menuUrl = () => {
+    const sessionUser = getSession()
+    const cid = (sessionUser as any)?.customerId
+    return cid ? `/menu/${DEFAULT_MENU_TOKEN}?customer_id=${cid}` : `/menu/${DEFAULT_MENU_TOKEN}`
+  }
   const [customerData, setCustomerData] = useState<{
     name: string
     phone: string
@@ -146,6 +152,8 @@ function PaymentMethodContent() {
   useEffect(() => {
     if (encryptedData && !customerData && !decryptingData) {
       setDecryptingData(true)
+      console.log('🔓 Decrypting customer data, token length:', encryptedData.length)
+      
       fetch('/api/decrypt-customer-data', {
         method: 'POST',
         headers: {
@@ -153,29 +161,37 @@ function PaymentMethodContent() {
         },
         body: JSON.stringify({ token: encryptedData }),
       })
-        .then(res => res.json())
-        .then(data => {
+        .then(async (res) => {
+          const data = await res.json()
+          
+          if (!res.ok) {
+            console.error('❌ Decrypt API error:', res.status, data)
+            throw new Error(data.error || 'Failed to decrypt customer data')
+          }
+          
           if (data.success && data.data) {
+            console.log('✅ Decryption successful')
             setCustomerData(data.data)
           } else {
-            // Jika dekripsi gagal, redirect ke checkout
-            console.error('Failed to decrypt customer data, redirecting to checkout')
-            const redirectParam = tableInfo?.rawToken || tableParam
-            router.push(`/checkout/${redirectParam}`)
+            console.error('❌ Decrypt failed:', data)
+            throw new Error(data.error || 'Failed to decrypt customer data')
           }
           setDecryptingData(false)
         })
         .catch(err => {
-          console.error('Error decrypting customer data:', err)
-          const redirectParam = tableInfo?.rawToken || tableParam
-          router.push(`/checkout/${redirectParam}`)
+          console.error('❌ Error decrypting customer data:', err)
+          setError(err.message || 'Gagal memproses data pembeli. Silakan kembali ke checkout.')
           setDecryptingData(false)
         })
     } else if (!encryptedData && (rawName || rawPhone || rawEmail)) {
-      // Jika tidak terenkripsi, redirect ke checkout untuk keamanan
-      console.warn('Unencrypted data detected, redirecting to checkout for encryption')
-      const redirectParam = tableInfo?.rawToken || tableParam
-      router.push(`/checkout/${redirectParam}`)
+      // Jika tidak terenkripsi, set customer data dari raw data (untuk backward compatibility)
+      console.warn('Unencrypted data detected, using raw data')
+      setCustomerData({
+        name: rawName || '',
+        phone: rawPhone || '',
+        email: rawEmail || '',
+      })
+      setDecryptingData(false)
     }
   }, [encryptedData, rawName, rawPhone, rawEmail, rawNote, customerData, decryptingData, tableInfo, tableParam, router])
   
@@ -199,8 +215,11 @@ function PaymentMethodContent() {
         
         const profileResponse = await getMejaProfile(tableInfo.rawToken)
         
+        console.log('📋 Profile response:', JSON.stringify(profileResponse, null, 2))
+        
         if (profileResponse.status === 'Success' && profileResponse.data?.stall?.qris) {
           const qrisPath = profileResponse.data.stall.qris
+          console.log('📋 QRIS path from API:', qrisPath)
           
           // Cek apakah qris ada, tidak kosong, dan tidak null
           if (qrisPath && qrisPath.trim() !== '' && qrisPath !== 'null') {
@@ -210,16 +229,22 @@ function PaymentMethodContent() {
               setQrisAvailable(true)
               setQrisImageUrl(qrisUrl)
             } else {
-              console.log('⚠️ QRIS path invalid')
-              setQrisAvailable(false)
+              console.log('⚠️ QRIS path invalid, but still allowing QRIS option')
+              // Tetap tampilkan QRIS option meskipun URL invalid (fallback)
+              setQrisAvailable(true)
+              setQrisImageUrl(null)
             }
           } else {
-            console.log('⚠️ QRIS not available (empty or null)')
-            setQrisAvailable(false)
+            console.log('⚠️ QRIS not available (empty or null), but still allowing QRIS option')
+            // Tetap tampilkan QRIS option meskipun tidak ada di API (fallback)
+            setQrisAvailable(true)
+            setQrisImageUrl(null)
           }
         } else {
-          console.log('⚠️ QRIS not available in response')
-          setQrisAvailable(false)
+          console.log('⚠️ QRIS not available in response, but still allowing QRIS option')
+          // Tetap tampilkan QRIS option meskipun tidak ada di response (fallback)
+          setQrisAvailable(true)
+          setQrisImageUrl(null)
         }
       } catch (error: any) {
         console.error('❌ Error checking QRIS availability:', error)
@@ -243,12 +268,8 @@ function PaymentMethodContent() {
     
     if (items.length === 0) {
       console.log('⚠️ Cart is empty, redirecting to menu')
-      // Untuk token mode, redirect ke menu dengan token
-      if (tableInfo.isToken && tableInfo.rawToken) {
-        router.push(`/menu/${tableInfo.rawToken}`)
-      } else {
-        router.push(`/menu/${tableInfo.tableNumber}`)
-      }
+      // Redirect ke menu dengan default token + customer_id jika ada
+      router.push(menuUrl())
       return
     }
     
@@ -258,7 +279,10 @@ function PaymentMethodContent() {
     }
     
     // Validate customer data (email optional)
-    if (!nameValidation.valid || !phoneValidation.valid) {
+    // Jangan redirect jika sudah ada customerData (berarti sudah berhasil didekripsi)
+    // Hanya redirect jika benar-benar tidak ada data customer sama sekali
+    if (!customerData && (!nameValidation.valid || !phoneValidation.valid)) {
+      console.warn('⚠️ Customer data invalid, redirecting to checkout')
       const redirectParam = tableInfo.rawToken || tableParam
       router.push(`/checkout/${redirectParam}`)
       return
@@ -324,6 +348,19 @@ function PaymentMethodContent() {
           ? tableInfo.rawToken 
           : undefined
         
+        // Ambil customerId dari session jika user sudah login
+        const sessionUser = getSession()
+        const customerId = (sessionUser as any)?.customerId
+        
+        console.log('👤 Customer ID dari session (QRIS):', customerId)
+        console.log('👤 Customer ID type:', typeof customerId)
+        console.log('👤 Session user:', sessionUser)
+        
+        if (!customerId) {
+          console.warn('⚠️ WARNING: No customerId found in session! Order will not be linked to customer account.')
+          console.warn('⚠️ User should login first to link orders to their account.')
+        }
+
         // Build payload untuk endpoint /meja/transaksi dengan status "selesai" dan transaction_method_id: 4
         const mejaPayload = buildMejaTransaksiPayload({
           token: tokenMeja,
@@ -331,6 +368,7 @@ function PaymentMethodContent() {
           customerName: customerName,
           customerPhone: customerPhone,
           customerEmail: customerEmail,
+          customerId: customerId, // Tambahkan customerId jika user sudah login
           paymentMethod: 'QRIS_RESTAURANT',
           orderNote: orderNote || undefined,
           items: savedOrderItems,
@@ -342,6 +380,7 @@ function PaymentMethodContent() {
         mejaPayload.status = 'selesai'
         
         console.log('📦 Payload untuk /meja/transaksi (QRIS completed):', JSON.stringify(mejaPayload, null, 2))
+        console.log('📦 Customer ID di payload:', mejaPayload.customer_id)
 
         // Kirim ke endpoint /meja/transaksi
         const posResponse = await sendTransactionToMeja(mejaPayload)
@@ -386,11 +425,8 @@ function PaymentMethodContent() {
       router.push(`/order-success/${completedOrderId}`)
     } else {
       // Fallback ke menu jika tidak ada orderId
-      if (tableInfo?.isToken && tableInfo.rawToken) {
-        router.push(`/menu/${tableInfo.rawToken}`)
-      } else {
-        router.push(`/menu/${tableInfo?.tableNumber || tableNumber}`)
-      }
+      // Redirect ke menu dengan default token + customer_id jika ada
+      router.push(menuUrl())
     }
   }
 
@@ -402,11 +438,11 @@ function PaymentMethodContent() {
       return
     }
 
-    // Validate customer data again
-    if (!nameValidation.valid || !phoneValidation.valid || !emailValidation.valid) {
+    // Validate customer data again (email optional, jadi tidak perlu validasi email)
+    if (!nameValidation.valid || !phoneValidation.valid) {
       setError('Data pembeli tidak valid. Silakan kembali dan isi ulang.')
-      const redirectParam = tableInfo?.rawToken || tableParam
-      router.push(`/checkout/${redirectParam}`)
+      // Jangan redirect otomatis, biarkan user pilih sendiri
+      setLoading(false)
       return
     }
 
@@ -491,6 +527,19 @@ function PaymentMethodContent() {
             ? tableInfo.rawToken 
             : undefined
           
+          // Ambil customerId dari session jika user sudah login
+          const sessionUser = getSession()
+          const customerId = (sessionUser as any)?.customerId
+          
+          console.log('👤 Customer ID dari session (CASHIER):', customerId)
+          console.log('👤 Customer ID type:', typeof customerId)
+          console.log('👤 Session user (CASHIER):', sessionUser)
+          
+          if (!customerId) {
+            console.warn('⚠️ WARNING: No customerId found in session! Order will not be linked to customer account.')
+            console.warn('⚠️ User should login first to link orders to their account.')
+          }
+
           // Build payload untuk endpoint /meja/transaksi menggunakan data dari cart items
           const mejaPayload = buildMejaTransaksiPayload({
             token: tokenMeja,
@@ -498,6 +547,7 @@ function PaymentMethodContent() {
             customerName: customerName,
             customerPhone: customerPhone,
             customerEmail: customerEmail,
+            customerId: customerId, // Tambahkan customerId jika user sudah login
             paymentMethod: paymentMethod,
             orderNote: orderNote || undefined,
             items: items.map(item => ({
@@ -511,6 +561,7 @@ function PaymentMethodContent() {
           })
 
           console.log('📦 Payload untuk /meja/transaksi:', JSON.stringify(mejaPayload, null, 2))
+          console.log('📦 Customer ID di payload (CASHIER):', mejaPayload.customer_id)
 
           // Kirim ke endpoint /meja/transaksi
           const posResponse = await sendTransactionToMeja(mejaPayload)
@@ -709,15 +760,37 @@ function PaymentMethodContent() {
                           height={256}
                           className="w-full h-full object-contain"
                           unoptimized
+                          onError={(e) => {
+                            console.error('❌ QRIS image failed to load:', qrisImageUrl)
+                            // Fallback: hide image and show message
+                            const target = e.target as HTMLImageElement
+                            if (target.parentElement) {
+                              target.parentElement.innerHTML = `
+                                <div class="text-center p-4">
+                                  <p class="text-xs text-gray-500 mb-2">QR Code tidak tersedia</p>
+                                  <p class="text-xs text-gray-400">Silakan hubungi kasir untuk pembayaran</p>
+                                </div>
+                              `
+                            }
+                          }}
                         />
                       </div>
                     </div>
-                  ) : (
+                  ) : loadingProfile ? (
                     <div className="bg-white p-5 rounded-xl border-2 border-gray-200 inline-block mb-4">
                       <div className="w-64 h-64 bg-gray-50 rounded-lg flex items-center justify-center border border-gray-200">
                         <div className="text-center">
                           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600 mx-auto mb-2"></div>
                           <p className="text-xs text-gray-500">Memuat QR Code...</p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-white p-5 rounded-xl border-2 border-gray-200 inline-block mb-4">
+                      <div className="w-64 h-64 bg-gray-50 rounded-lg flex items-center justify-center border border-gray-200">
+                        <div className="text-center p-4">
+                          <p className="text-xs text-gray-500 mb-2">QR Code tidak tersedia</p>
+                          <p className="text-xs text-gray-400">Silakan hubungi kasir untuk pembayaran</p>
                         </div>
                       </div>
                     </div>

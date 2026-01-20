@@ -3,6 +3,8 @@
 import React, { useEffect, useState, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { CheckCircle2, XCircle } from 'lucide-react'
+import { DEFAULT_MENU_TOKEN } from '@/lib/token-utils'
+import { getSession } from '@/lib/auth'
 
 // Dynamic import untuk react-qr-code
 let QRCodeSVG: React.ComponentType<any> | null = null
@@ -41,6 +43,11 @@ function QRISPaymentContent() {
   const [loading, setLoading] = useState(true)
   const [paymentStatus, setPaymentStatus] = useState<'pending' | 'success' | 'failed'>('pending')
   const [mounted, setMounted] = useState(false)
+  const menuUrl = () => {
+    const sessionUser = getSession()
+    const cid = (sessionUser as any)?.customerId
+    return cid ? `/menu/${DEFAULT_MENU_TOKEN}?customer_id=${cid}` : `/menu/${DEFAULT_MENU_TOKEN}`
+  }
 
   useEffect(() => {
     setMounted(true)
@@ -69,7 +76,7 @@ function QRISPaymentContent() {
             // Continue to show payment page
           } else {
             alert(`Pesanan belum siap untuk dibayar. Status: ${orderData.status}`)
-            router.push(`/menu/${orderData.tableNumber}`)
+            router.push(menuUrl())
             return
           }
         }
@@ -188,7 +195,7 @@ function QRISPaymentContent() {
           <Button
             variant="primary"
             className="w-full"
-            onClick={() => router.push(`/menu/${order.tableNumber}`)}
+            onClick={() => router.push(menuUrl())}
           >
             Kembali ke Menu
           </Button>
@@ -213,7 +220,7 @@ function QRISPaymentContent() {
           <Button
             variant="primary"
             className="w-full"
-            onClick={() => router.push(`/menu/${order.tableNumber}`)}
+            onClick={() => router.push(menuUrl())}
           >
             Kembali
           </Button>
@@ -289,7 +296,7 @@ function QRISPaymentContent() {
 
           <div className="mt-4 text-center">
             <button
-              onClick={() => router.push(`/menu/${order.tableNumber}`)}
+              onClick={() => router.push(menuUrl())}
               className="text-primary-600 hover:text-primary-700 font-medium text-sm"
             >
               Batalkan Pembayaran

@@ -16,15 +16,15 @@ export const CategoryTabs: React.FC<CategoryTabsProps> = ({
   onCategoryChange,
 }) => {
   return (
-    <div className="sticky top-[96px] z-30 bg-white border-b border-gray-100 pb-3 pt-4 shadow-sm">
-      <div className="flex gap-2 overflow-x-auto pb-2 px-4 scrollbar-hide">
+    <div className="bg-white">
+      <div className="flex gap-1.5 overflow-x-auto pb-3 pt-3 px-4 scrollbar-hide">
         <button
           onClick={() => onCategoryChange(null)}
           className={cn(
-            'px-5 py-2.5 rounded-xl whitespace-nowrap font-semibold text-sm transition-all duration-200 shadow-sm',
+            'px-4 py-2 rounded-lg whitespace-nowrap text-sm font-medium transition-all duration-200',
             activeCategory === null
-              ? 'bg-primary-600 text-white shadow-md scale-105'
-              : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-200'
+              ? 'bg-gradient-to-r from-primary-600 to-primary-500 text-white shadow-sm'
+              : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
           )}
         >
           Semua
@@ -34,10 +34,10 @@ export const CategoryTabs: React.FC<CategoryTabsProps> = ({
             key={category}
             onClick={() => onCategoryChange(category)}
             className={cn(
-              'px-5 py-2.5 rounded-xl whitespace-nowrap font-semibold text-sm transition-all duration-200 shadow-sm',
+              'px-4 py-2 rounded-lg whitespace-nowrap text-sm font-medium transition-all duration-200',
               activeCategory === category
-                ? 'bg-primary-600 text-white shadow-md scale-105'
-                : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-200'
+                ? 'bg-gradient-to-r from-primary-600 to-primary-500 text-white shadow-sm'
+                : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
             )}
           >
             {category}

@@ -8,10 +8,15 @@ const IV_LENGTH = 16 // 16 byte untuk AES
 // Generate key 32 byte dari ENV
 const getKey = () => {
   const baseKey = process.env.ENCRYPTION_KEY
+  
+  // Fallback untuk development jika ENCRYPTION_KEY tidak di-set
   if (!baseKey || baseKey === 'ganti_encryption_key_di_env_anda') {
-    console.error('ENCRYPTION_KEY not set or using default value!')
-    throw new Error('ENCRYPTION_KEY environment variable is not configured')
+    console.warn('⚠️ ENCRYPTION_KEY not set, using development fallback key')
+    // Development fallback key (JANGAN gunakan di production!)
+    const devKey = 'dev_encryption_key_32_bytes_long_for_testing_only'
+    return crypto.createHash('sha256').update(devKey).digest().slice(0, 32)
   }
+  
   return crypto.createHash('sha256').update(String(baseKey)).digest().slice(0, 32)
 }
 
@@ -68,9 +73,20 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const { token } = body
 
+    console.log('🔓 Decrypt request received, token length:', token?.length || 0)
+
     if (!token || typeof token !== 'string') {
+      console.error('❌ Token is missing or invalid type')
       return NextResponse.json(
-        { success: false, error: 'Token is required' },
+        { success: false, error: 'Token is required and must be a string' },
+        { status: 400 }
+      )
+    }
+
+    if (token.trim().length === 0) {
+      console.error('❌ Token is empty')
+      return NextResponse.json(
+        { success: false, error: 'Token cannot be empty' },
         { status: 400 }
       )
     }
@@ -79,20 +95,31 @@ export async function POST(request: NextRequest) {
     const decrypted = decryptCustomerData(token)
 
     if (!decrypted) {
+      console.error('❌ Decryption failed for token:', token.substring(0, 50) + '...')
       return NextResponse.json(
-        { success: false, error: 'Invalid token format or decryption failed' },
+        { 
+          success: false, 
+          error: 'Invalid token format or decryption failed',
+          details: process.env.NODE_ENV === 'development' ? 'Check server logs for details' : undefined
+        },
         { status: 400 }
       )
     }
 
+    console.log('✅ Decryption successful')
     return NextResponse.json({
       success: true,
       data: decrypted,
     })
   } catch (error: any) {
-    console.error('Error decrypting customer data:', error)
+    console.error('❌ Error decrypting customer data:', error)
+    console.error('Error stack:', error.stack)
     return NextResponse.json(
-      { success: false, error: error.message || 'Internal server error' },
+      { 
+        success: false, 
+        error: error.message || 'Internal server error',
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      },
       { status: 500 }
     )
   }

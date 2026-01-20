@@ -3,7 +3,111 @@
  */
 
 // Base URL API backend
-const API_BASE_URL = 'https://mkasir-fnb-dev.tip2.co/api/v1'
+export const API_BASE_URL = 'https://mkasir-fnb-dev.tip2.co/api/v1'
+
+/**
+ * Get customer order history (riwayat)
+ */
+// Type definition for API response
+interface CustomerRiwayatResponse {
+  status: string
+  data: any[] // Array of transaction data
+  currentData?: number
+  currentPage?: number
+  totalData?: number
+  totalPages?: number
+}
+
+export async function getCustomerRiwayat(
+  customerId: number | string,
+  kode: string,
+  page: number = 1,
+  limit: number = 10
+): Promise<CustomerRiwayatResponse> {
+  try {
+    // Ensure customerId is a number
+    const customerIdNum = typeof customerId === 'string' ? parseInt(customerId, 10) : customerId
+    
+    // Pastikan kode tidak null/undefined dan trim whitespace
+    const kodeClean = kode ? kode.trim() : ''
+    if (!kodeClean) {
+      throw new Error('Kode/password tidak boleh kosong')
+    }
+    
+    const url = `${API_BASE_URL}/meja/customer/riwayat?customer_id=${customerIdNum}&kode=${encodeURIComponent(kodeClean)}&page=${page}&limit=${limit}`
+    console.log(`🔗 Fetching riwayat from: ${url}`)
+    console.log(`🔗 Kode yang digunakan:`, JSON.stringify(kodeClean))
+    console.log(`🔗 Kode length:`, kodeClean.length)
+    console.log(`🔗 Full kode (for debugging):`, kodeClean)
+    console.log(`🔗 Customer ID:`, customerIdNum)
+    console.log(`🔗 Page:`, page, `Limit:`, limit)
+    console.log(`🔗 Full kode (for debugging):`, kodeClean)
+    console.log(`🔗 Customer ID:`, customerIdNum)
+    console.log(`🔗 Page:`, page, `Limit:`, limit)
+    
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error(`❌ HTTP error! status: ${response.status}, response:`, errorText)
+      throw new Error(`HTTP error! status: ${response.status}`)
+    }
+
+    const data: any = await response.json()
+    
+    // Type-safe response handling dengan defensive checks
+    // Struktur API: { status: "Success", data: [...], currentData, totalData, totalPages }
+    console.log(`📋 Raw API response type:`, typeof data)
+    console.log(`📋 Raw API response.data type:`, typeof data?.data)
+    console.log(`📋 Raw API response.data isArray:`, Array.isArray(data?.data))
+    console.log(`📋 Raw API response.data length:`, data?.data?.length)
+    
+    // Pastikan data.data adalah array
+    const responseDataArray = Array.isArray(data?.data) ? data.data : []
+    
+    const riwayatResponse: CustomerRiwayatResponse = {
+      status: data?.status || 'Unknown',
+      data: responseDataArray, // Array langsung dari API
+      currentData: data?.currentData ?? undefined,
+      currentPage: data?.currentPage ?? undefined,
+      totalData: data?.totalData ?? undefined,
+      totalPages: data?.totalPages ?? undefined,
+    }
+    
+    console.log(`✅ Riwayat API response status:`, riwayatResponse.status)
+    console.log(`✅ Riwayat API response data length:`, riwayatResponse.data.length)
+    console.log(`✅ Riwayat API response totalData:`, riwayatResponse.totalData)
+    console.log(`✅ Riwayat API response totalPages:`, riwayatResponse.totalPages)
+    
+    // Log first few items if data exists
+    if (riwayatResponse.data && riwayatResponse.data.length > 0) {
+      console.log(`✅ First 3 items IDs:`, riwayatResponse.data.slice(0, 3).map((item: any) => item.id || item.nomor_transaksi))
+      console.log(`✅ First item sample:`, {
+        id: riwayatResponse.data[0]?.id,
+        nomor_transaksi: riwayatResponse.data[0]?.nomor_transaksi,
+        jumlah_total: riwayatResponse.data[0]?.jumlah_total,
+      })
+    } else {
+      console.error(`❌ CRITICAL: No data in response!`)
+      console.error(`❌ Response structure:`, Object.keys(riwayatResponse))
+      console.error(`❌ Raw response data:`, data)
+      console.error(`❌ Raw response.data:`, data?.data)
+      console.error(`❌ Raw response.data type:`, typeof data?.data)
+      console.error(`❌ Raw response.data isArray:`, Array.isArray(data?.data))
+    }
+    
+    return riwayatResponse
+  } catch (error: any) {  
+    console.error('❌ Error getting customer riwayat:', error)
+    throw new Error(`Failed to get customer riwayat: ${error.message || 'Unknown error'}`)
+  }
+}
 
 // Base URL untuk QRIS image
 const QRIS_IMAGE_BASE_URL = 'https://s3asia01.tip2.co/mkasir-fnb/'
@@ -152,6 +256,7 @@ export interface MejaTransaksiPayload {
   token_meja?: string // Token meja untuk dekripsi stall_id dan nomor meja
   kode?: string
   user_id?: number | string
+  customer_id?: number | string // Customer ID untuk menghubungkan order dengan customer
   nomor_meja: number
   waktu_pesan: string // ISO 8601 format
   waktu_bayar?: string | null // ISO 8601 format atau null
@@ -370,6 +475,7 @@ export function buildMejaTransaksiPayload(params: {
   customerName: string
   customerPhone: string
   customerEmail: string
+  customerId?: number | string // Customer ID untuk menghubungkan order dengan customer
   paymentMethod: 'QRIS_RESTAURANT' | 'CASHIER'
   orderNote?: string
   items: Array<{
@@ -389,6 +495,7 @@ export function buildMejaTransaksiPayload(params: {
     customerName,
     customerPhone,
     customerEmail,
+    customerId,
     paymentMethod,
     orderNote,
     tableNumber,
@@ -484,6 +591,19 @@ export function buildMejaTransaksiPayload(params: {
   }
   if (transactionMethodId !== undefined) {
     payload.transaction_method_id = transactionMethodId
+  }
+  // Pastikan customer_id selalu disertakan jika ada (convert ke number jika string)
+  if (customerId !== undefined && customerId !== null) {
+    // Convert ke number jika string, untuk konsistensi dengan API
+    const customerIdNum = typeof customerId === 'string' ? parseInt(customerId, 10) : customerId
+    if (!isNaN(customerIdNum) && customerIdNum > 0) {
+      payload.customer_id = customerIdNum
+      console.log('✅ customer_id added to payload:', customerIdNum, '(original:', customerId, ')')
+    } else {
+      console.warn('⚠️ Invalid customerId, skipping:', customerId)
+    }
+  } else {
+    console.warn('⚠️ customerId is undefined/null, order will not be linked to customer account')
   }
 
   return payload

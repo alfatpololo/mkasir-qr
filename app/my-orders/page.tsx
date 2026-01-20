@@ -3,8 +3,9 @@
 import React, { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ArrowLeft, Clock, ChefHat, Package, CheckCircle2, UtensilsCrossed, CreditCard, Home } from 'lucide-react'
-import { subscribeToCustomerOrders } from '@/lib/customer-firestore'
-import { getOrder } from '@/lib/firestore'
+import { getCustomerRiwayat } from '@/lib/pos-api'
+import { getSession, getStoredPassword } from '@/lib/auth'
+import { DEFAULT_MENU_TOKEN } from '@/lib/token-utils'
 import { Order } from '@/lib/types'
 import { formatCurrency } from '@/lib/utils'
 import { Button } from '@/components/Button'
@@ -42,88 +43,344 @@ function MyOrdersContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const orderIdParam = searchParams.get('orderId')
-  
-  const [orders, setOrders] = useState<Order[]>([])
-  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [unsubscribeFn, setUnsubscribeFn] = useState<(() => void) | null>(null)
-
-  const loadCustomerOrders = (customerEmail: string, customerPhone?: string) => {
-    // Nomor HP wajib, email optional
-    if (!customerPhone && !customerEmail) {
-      console.warn('Customer phone or email not found, cannot load orders')
-      setLoading(false)
-      return
-    }
-
-    console.log('Loading orders for:', customerEmail, customerPhone)
-
-    // Cleanup previous subscription
-    if (unsubscribeFn) {
-      unsubscribeFn()
-    }
-
-    const unsubscribe = subscribeToCustomerOrders(
-      customerEmail,
-      customerPhone,
-      (ordersData) => {
-        console.log('Orders received:', ordersData.length)
-        setOrders(ordersData)
-        setLoading(false)
-
-        // Jika ada orderId di URL, tampilkan detail order tersebut
-        if (orderIdParam && ordersData.length > 0) {
-          const order = ordersData.find(o => o.id === orderIdParam)
-          if (order) {
-            setSelectedOrder(order || null)
-          }
-        }
-      }
-    )
-
-    setUnsubscribeFn(() => unsubscribe)
-    return unsubscribe
+  const menuUrl = () => {
+    const sessionUser = getSession()
+    const cid = (sessionUser as any)?.customerId
+    return cid ? `/menu/${DEFAULT_MENU_TOKEN}?customer_id=${cid}` : `/menu/${DEFAULT_MENU_TOKEN}`
   }
+  
+  const [riwayatData, setRiwayatData] = useState<any>(null)
+  const [selectedOrder, setSelectedOrder] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [sessionUser, setSessionUser] = useState<any>(null)
 
   useEffect(() => {
-    // Jika ada orderId di URL, load order tersebut dulu untuk mendapatkan customer email
-    if (orderIdParam && !selectedOrder) {
-      getOrder(orderIdParam).then((order) => {
-        if (order) {
-          setSelectedOrder(order)
-          // Gunakan email dari order untuk load semua orders
-          if (order.customerEmail) {
-            loadCustomerOrders(order.customerEmail, order.customerPhone)
-          }
-        } else {
-          // Jika order tidak ditemukan, coba dari localStorage
-          const customerEmail = localStorage.getItem('customerEmail') || ''
-          const customerPhone = localStorage.getItem('customerPhone') || undefined
-          if (customerEmail) {
-            loadCustomerOrders(customerEmail, customerPhone)
-          } else {
-            setLoading(false)
+    // Load riwayat from API - HANYA API, TIDAK ADA FIRESTORE
+    const loadRiwayatFromAPI = async () => {
+      const currentSessionUser = getSession()
+      const storedPassword = getStoredPassword()
+      
+      // Check session - password might be empty for phone-only login
+      if (!currentSessionUser || !currentSessionUser.customerId) {
+        console.warn('⚠️ No session found, redirecting to menu')
+        router.push(menuUrl())
+        setLoading(false)
+        return
+      }
+      
+      // Simpan session user ke state untuk digunakan di render
+      setSessionUser(currentSessionUser)
+      
+      try {
+        setLoading(true)
+        // For phone-only login, use default password '000000'
+        const kode = storedPassword || '000000'
+        console.log(`📋 Starting fetch riwayat for customerId: ${currentSessionUser.customerId}, kode: ${kode ? '***' : 'EMPTY'}`)
+        console.log(`📋 CustomerId type:`, typeof currentSessionUser.customerId)
+        console.log(`📋 Kode type:`, typeof kode)
+        console.log(`📋 Kode value (raw):`, JSON.stringify(kode))
+        console.log(`📋 Kode length:`, kode?.length)
+        
+        // Verify password from localStorage directly
+        const localStorageCheck = localStorage.getItem('phoneLoggedInUser')
+        if (localStorageCheck) {
+          try {
+            const parsed = JSON.parse(localStorageCheck)
+            console.log('🔍 Direct localStorage check:')
+            console.log('🔍 - _password:', parsed._password)
+            console.log('🔍 - customerId:', parsed.customerId)
+            console.log('🔍 - Password match:', parsed._password === kode)
+          } catch (e) {
+            console.error('❌ Error parsing localStorage:', e)
           }
         }
-      })
-    } else {
-      // Ambil email dari localStorage atau session
-      const customerEmail = localStorage.getItem('customerEmail') || ''
-      const customerPhone = localStorage.getItem('customerPhone') || undefined
-      if (customerEmail) {
-        loadCustomerOrders(customerEmail, customerPhone)
-      } else {
+        
+        // Fetch all pages
+        const pageSize = 50
+        let page = 1
+        let allData: any[] = []
+        let totalData = 0
+        let totalPages = 1
+        let lastResponse: any = null // Simpan response terakhir untuk metadata
+        
+        while (true) {
+          console.log(`📋 Fetching riwayat page ${page}...`)
+          const riwayat = await getCustomerRiwayat(
+            currentSessionUser.customerId!,
+            kode,
+            page,
+            pageSize
+          )
+          
+          lastResponse = riwayat // Simpan response terakhir
+          
+          console.log(`📋 ===== DEBUGGING PAGE ${page} =====`)
+          console.log(`📋 Riwayat response type:`, typeof riwayat)
+          console.log(`📋 Riwayat is null?:`, riwayat === null)
+          console.log(`📋 Riwayat is undefined?:`, riwayat === undefined)
+          console.log(`📋 Riwayat full response:`, JSON.stringify(riwayat, null, 2))
+          
+          // API response structure: 
+          // { status: "Success", data: [...], currentData: 4, currentPage: 1, totalData: 5, totalPages: 1 }
+          // getCustomerRiwayat sudah return CustomerRiwayatResponse dengan structure { status, data: [], ... }
+          let dataArr: any[] = []
+          
+          // Defensive handling: Pastikan riwayat tidak null/undefined
+          if (!riwayat) {
+            console.error(`❌ Riwayat response is null/undefined`)
+            dataArr = []
+          } else {
+            // Log semua keys dari response untuk debugging
+            console.log(`📋 Riwayat keys:`, Object.keys(riwayat))
+            console.log(`📋 Riwayat.status:`, riwayat.status)
+            console.log(`📋 Riwayat.data exists?:`, 'data' in riwayat)
+            console.log(`📋 Riwayat.data type:`, typeof riwayat.data)
+            console.log(`📋 Riwayat.data isArray?:`, Array.isArray(riwayat.data))
+            console.log(`📋 Riwayat.data value:`, riwayat.data)
+            console.log(`📋 Riwayat.data length:`, riwayat.data?.length)
+            
+            if (riwayat?.data && Array.isArray(riwayat.data)) {
+              // Response structure: { status: "Success", data: [...], ... }
+              // data adalah array yang berisi object-object transaksi
+              // getCustomerRiwayat sudah return CustomerRiwayatResponse dengan data sebagai array
+              dataArr = riwayat.data
+              console.log(`✅✅✅ SUCCESS: Response has data property (array), length: ${dataArr.length}`)
+              console.log(`📊 Response metadata: currentData=${riwayat.currentData}, totalData=${riwayat.totalData}, totalPages=${riwayat.totalPages}`)
+              
+              // Verify array content
+              if (dataArr.length > 0) {
+                console.log(`✅✅✅ Array is NOT empty! First item:`, {
+                  id: dataArr[0]?.id,
+                  nomor_transaksi: dataArr[0]?.nomor_transaksi,
+                  jumlah_total: dataArr[0]?.jumlah_total,
+                })
+              }
+              
+              // Debug: Log sample data
+              if (dataArr.length > 0) {
+                console.log(`📊 Sample data item (first):`, JSON.stringify(dataArr[0], null, 2))
+                console.log(`📊 First item type:`, typeof dataArr[0])
+                console.log(`📊 First item is object?:`, typeof dataArr[0] === 'object' && dataArr[0] !== null)
+                if (typeof dataArr[0] === 'object' && dataArr[0] !== null) {
+                  console.log(`📊 First item keys:`, Object.keys(dataArr[0]))
+                }
+              } else {
+                console.warn(`⚠️ WARNING: dataArr exists but is EMPTY array!`)
+                console.warn(`⚠️ This means API returned empty data array`)
+              }
+            } else if (riwayat?.data && typeof riwayat.data === 'object' && !Array.isArray(riwayat.data)) {
+              // Handle jika data adalah object yang berisi array di dalamnya
+              // Cek berbagai kemungkinan property yang mungkin berisi array
+              console.log(`📋 data is object, checking for nested array...`)
+              console.log(`📋 data keys:`, Object.keys(riwayat.data))
+              
+              // Cek berbagai kemungkinan struktur
+              if (riwayat.data.items && Array.isArray(riwayat.data.items)) {
+                dataArr = riwayat.data.items
+                console.log(`✅ Found array in data.items, length: ${dataArr.length}`)
+              } else if (riwayat.data.list && Array.isArray(riwayat.data.list)) {
+                dataArr = riwayat.data.list
+                console.log(`✅ Found array in data.list, length: ${dataArr.length}`)
+              } else if (riwayat.data.transactions && Array.isArray(riwayat.data.transactions)) {
+                dataArr = riwayat.data.transactions
+                console.log(`✅ Found array in data.transactions, length: ${dataArr.length}`)
+              } else {
+                // Coba convert object values ke array jika semua values adalah objects
+                const values = Object.values(riwayat.data)
+                if (values.length > 0 && Array.isArray(values[0])) {
+                  dataArr = values[0] as any[]
+                  console.log(`✅ Found array in first property of data object, length: ${dataArr.length}`)
+                } else {
+                  console.error(`❌ Could not find array in data object`)
+                  console.error(`❌ data object structure:`, riwayat.data)
+                  dataArr = []
+                }
+              }
+            } else if (Array.isArray(riwayat)) {
+              // Jika response langsung array (fallback - tidak seharusnya terjadi)
+              dataArr = riwayat
+              console.log(`✅ Response is direct array, length: ${dataArr.length}`)
+            } else if (riwayat?.items && Array.isArray(riwayat.items)) {
+              // Fallback ke items
+              dataArr = riwayat.items
+              console.log(`✅ Response has items property, length: ${dataArr.length}`)
+            } else {
+              console.error(`❌ ERROR: Unexpected response structure!`)
+              console.error(`❌ Response:`, riwayat)
+              console.error(`❌ Response keys:`, Object.keys(riwayat))
+              console.error(`❌ Response.data type:`, typeof riwayat?.data)
+              console.error(`❌ Response.data isArray:`, Array.isArray(riwayat?.data))
+              console.error(`❌ Response.data value:`, riwayat?.data)
+              dataArr = []
+            }
+          }
+          
+          console.log(`📋 Final dataArr length: ${dataArr.length}`)
+          console.log(`📋 Final dataArr type:`, typeof dataArr)
+          console.log(`📋 Final dataArr isArray:`, Array.isArray(dataArr))
+          
+          // Validasi: Pastikan dataArr adalah array sebelum digunakan
+          if (!Array.isArray(dataArr)) {
+            console.error(`❌ CRITICAL ERROR: dataArr is not an array! Type:`, typeof dataArr, `Value:`, dataArr)
+            dataArr = []
+          }
+          
+          if (dataArr.length === 0) {
+            console.log(`📋 No more data at page ${page}, stopping...`)
+            break
+          }
+          
+          // Defensive: Pastikan dataArr adalah array sebelum spread
+          if (Array.isArray(dataArr) && dataArr.length > 0) {
+            allData = [...allData, ...dataArr]
+            console.log(`✅ Added ${dataArr.length} items to allData. Total: ${allData.length}`)
+          } else {
+            console.warn(`⚠️ Skipping invalid dataArr at page ${page}. Type:`, typeof dataArr, `IsArray:`, Array.isArray(dataArr))
+          }
+          
+          console.log(`📋 Page ${page}: received ${dataArr.length} items, total so far: ${allData.length}`)
+          
+          // Gunakan metadata dari API untuk menentukan apakah sudah di halaman terakhir
+          const totalPagesFromAPI = riwayat?.totalPages || riwayat?.total_pages
+          
+          if (totalPagesFromAPI && page >= totalPagesFromAPI) {
+            console.log(`📋 Last page reached (page ${page} >= totalPages ${totalPagesFromAPI}), stopping...`)
+            break
+          }
+          
+          // Fallback: Break jika data yang diterima kurang dari pageSize (berarti sudah di halaman terakhir)
+          if (dataArr.length < pageSize) {
+            console.log(`📋 Last page reached (received ${dataArr.length} < ${pageSize}), stopping...`)
+            break
+          }
+          
+          page += 1
+        }
+        
+        console.log('📋 Final riwayat data:', JSON.stringify(allData, null, 2))
+        console.log('📋 Sample orders (first 3):', allData.slice(0, 3))
+        console.log('📋 Current customerId from session:', currentSessionUser.customerId)
+        
+        // API sudah filter berdasarkan customer_id di query, jadi semua data yang diterima sudah milik user yang login
+        // Tapi kita tetap log untuk debugging
+        console.log(`📋 All orders received: ${allData.length} orders for customerId: ${currentSessionUser.customerId}`)
+        console.log(`📋 Sample order IDs:`, allData.slice(0, 5).map((o: any) => ({ id: o.id, nomor_transaksi: o.nomor_transaksi })))
+        
+        const filteredData = allData // API sudah filter, jadi langsung pakai
+        
+        // Gunakan metadata dari API response terakhir jika ada
+        const totalDataFromAPI = lastResponse?.totalData || lastResponse?.total_data || filteredData.length
+        const totalPagesFromAPI = lastResponse?.totalPages || lastResponse?.total_pages || 1
+        
+        const mergedRiwayat = {
+          data: filteredData,
+          totalData: totalDataFromAPI, // Gunakan totalData dari API
+          totalPages: totalPagesFromAPI, // Gunakan totalPages dari API
+          currentPage: 1,
+        }
+        
+        console.log(`📊 Merged riwayat metadata: totalData=${totalDataFromAPI}, totalPages=${totalPagesFromAPI}, actualDataLength=${filteredData.length}`)
+        
+        setRiwayatData(mergedRiwayat)
+        console.log('✅ Riwayat loaded from API:', mergedRiwayat)
+        
+        // Jika ada orderId di URL, cari dari data yang sudah di-fetch
+        if (orderIdParam) {
+          console.log(`🔍 Searching for orderId: ${orderIdParam} in ${filteredData.length} orders`)
+          console.log(`🔍 Available order IDs:`, filteredData.map((o: any) => ({ 
+            id: o.id, 
+            nomor_transaksi: o.nomor_transaksi,
+            idType: typeof o.id,
+            nomorType: typeof o.nomor_transaksi
+          })))
+          
+          const foundOrder = filteredData.find((o: any) => {
+            // API structure: { id, nomor_transaksi, ... }
+            // Coba match dengan id (number) atau nomor_transaksi (string)
+            const oId = o.id || o.nomor_transaksi
+            const paramId = orderIdParam
+            
+            // Match exact atau sebagai string
+            const match = oId && (String(oId) === String(paramId) || oId === Number(paramId))
+            if (match) {
+              console.log(`✅ Match found: orderId=${oId}, paramId=${paramId}, type: ${typeof oId}`)
+            }
+            return match
+          })
+          
+          if (foundOrder) {
+            console.log('✅ Found order from API:', foundOrder)
+            // Convert API order format ke format yang bisa ditampilkan
+            // API structure: { id, nomor_transaksi, nomor_meja, waktu_pesan, waktu_bayar, jumlah_total, status, transaction_details, dll }
+            const apiOrder = {
+              id: String(foundOrder.id || foundOrder.nomor_transaksi || orderIdParam),
+              tableNumber: parseInt(foundOrder.nomor_meja) || 0,
+              total: foundOrder.jumlah_total || 0,
+              status: foundOrder.status === 'selesai' ? 'PAID' : (foundOrder.status || 'PAID'),
+              createdAt: foundOrder.waktu_pesan || foundOrder.waktu_bayar || new Date(),
+              items: (foundOrder.transaction_details || []).map((item: any) => ({
+                productId: item.product_id || '',
+                name: item.product?.nama || item.product_name || '',
+                qty: item.kuantitas || item.quantity || 0,
+                note: item.catatan || item.note || '',
+                price: item.harga || item.price || 0,
+              })),
+              customerName: foundOrder.customer_nama || '',
+              customerPhone: foundOrder.customer_no_hp || '',
+              customerEmail: foundOrder.customer_email || '',
+            }
+            setSelectedOrder(apiOrder)
+          } else {
+            console.warn('⚠️ Order not found in API data:', orderIdParam)
+            console.warn('⚠️ Available order IDs:', filteredData.map((o: any) => o.id || o.nomor_transaksi))
+          }
+        }
+        
+        setLoading(false)
+      } catch (error) {
+        console.error('❌ Failed to load riwayat from API:', error)
         setLoading(false)
       }
     }
 
-    // Cleanup on unmount
-    return () => {
-      if (unsubscribeFn) {
-        unsubscribeFn()
+    // Load riwayat dari API
+    loadRiwayatFromAPI()
+  }, [orderIdParam, router])
+  
+  // Handle orderId dari URL setelah riwayatData sudah di-load
+  useEffect(() => {
+    if (orderIdParam && riwayatData && riwayatData.data && !selectedOrder) {
+      const foundOrder = riwayatData.data.find((o: any) => {
+        // API structure: { id, nomor_transaksi, ... }
+        const oId = o.id || o.nomor_transaksi
+        return oId && String(oId) === String(orderIdParam)
+      })
+      
+      if (foundOrder) {
+        console.log('✅ Found order from API (useEffect):', foundOrder)
+        // Convert API order format ke format yang bisa ditampilkan
+        // API structure: { id, nomor_transaksi, nomor_meja, waktu_pesan, waktu_bayar, jumlah_total, status, transaction_details, dll }
+        const apiOrder = {
+          id: String(foundOrder.id || foundOrder.nomor_transaksi || orderIdParam),
+          tableNumber: parseInt(foundOrder.nomor_meja) || 0,
+          total: foundOrder.jumlah_total || 0,
+          status: foundOrder.status === 'selesai' ? 'PAID' : (foundOrder.status || 'PAID'),
+          createdAt: foundOrder.waktu_pesan || foundOrder.waktu_bayar || new Date(),
+          items: (foundOrder.transaction_details || []).map((item: any) => ({
+            productId: item.product_id || '',
+            name: item.product?.nama || item.product_name || '',
+            qty: item.kuantitas || item.quantity || 0,
+            note: item.catatan || item.note || '',
+            price: item.harga || item.price || 0,
+          })),
+          customerName: foundOrder.customer_nama || '',
+          customerPhone: foundOrder.customer_no_hp || '',
+          customerEmail: foundOrder.customer_email || '',
+        }
+        setSelectedOrder(apiOrder)
       }
     }
-  }, [orderIdParam])
+  }, [orderIdParam, riwayatData, selectedOrder])
 
 
   const formatDate = (date: any) => {
@@ -279,23 +536,7 @@ function MyOrdersContent() {
               variant="primary"
               className="w-full py-4 text-base font-semibold"
               onClick={() => {
-                // Ambil token dari localStorage atau gunakan tableNumber
-                const savedToken = localStorage.getItem('tableToken')
-                const savedTableNumber = localStorage.getItem('tableNumber')
-                
-                if (savedToken) {
-                  // Jika ada token, gunakan token
-                  router.push(`/menu/${savedToken}`)
-                } else if (savedTableNumber) {
-                  // Jika ada tableNumber, gunakan tableNumber
-                  router.push(`/menu/${savedTableNumber}`)
-                } else if (selectedOrder.tableNumber > 0) {
-                  // Fallback ke tableNumber dari order
-                  router.push(`/menu/${selectedOrder.tableNumber}`)
-                } else {
-                  // Fallback terakhir
-                  router.push('/menu/1')
-                }
+                router.push(menuUrl())
               }}
             >
               <Home className="w-5 h-5" />
@@ -340,55 +581,86 @@ function MyOrdersContent() {
           <div className="flex items-center justify-center py-12">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
           </div>
-        ) : orders.length === 0 ? (
-          <div className="text-center py-12">
-            <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-600 font-medium mb-2">Belum ada pesanan</p>
-            <p className="text-sm text-gray-500">Pesanan Anda akan muncul di sini</p>
-          </div>
-        ) : (
+        ) : riwayatData && riwayatData.data && Array.isArray(riwayatData.data) && riwayatData.data.length > 0 ? (
+          // Tampilkan data dari API riwayat
           <div className="space-y-3">
-            {orders.map((order) => {
-              const status = statusConfig[order.status]
+            {riwayatData.data.map((order: any, index: number) => {
+              // API structure: { id, nomor_transaksi, nomor_meja, waktu_pesan, waktu_bayar, jumlah_total, status, transaction_details, dll }
+              // Gunakan id (number) sebagai primary, fallback ke nomor_transaksi (string)
+              const orderId = order.id ? String(order.id) : (order.nomor_transaksi || `#${index + 1}`)
+              const total = order.jumlah_total || 0
+              const tanggal = order.waktu_pesan || order.waktu_bayar || '-'
+              const userId = order.user_id || order.customer_id || sessionUser?.customerId || '-'
+              
+              // Format tanggal
+              let formattedDate = tanggal
+              if (tanggal && typeof tanggal === 'string' && tanggal !== '-') {
+                try {
+                  const dateObj = new Date(tanggal)
+                  if (!isNaN(dateObj.getTime())) {
+                    formattedDate = dateObj.toLocaleDateString('id-ID', {
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })
+                  }
+                } catch (e) {
+                  // Keep original if parsing fails
+                }
+              }
+              
               return (
-                <div
-                  key={order.id}
-                  onClick={() => setSelectedOrder(order)}
-                  className="bg-white rounded-lg border border-gray-200 p-4 cursor-pointer hover:shadow-md transition-shadow"
+                <button
+                  key={orderId}
+                  onClick={() => router.push(`/my-orders?orderId=${orderId}`)}
+                  className="w-full text-left bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow"
                 >
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className={`${status.color}`}>
-                          {status.icon}
-                        </div>
-                        <span className={`text-xs font-medium ${status.color}`}>
-                          {status.label}
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-500 mb-1">
-                        {formatDateTime(order.createdAt)}
+                      <p className="text-sm font-semibold text-gray-900 mb-1">
+                        Order #{orderId}
                       </p>
-                      {order.tableNumber > 0 && (
+                      <p className="text-xs text-gray-500 mb-1">
+                        {formattedDate}
+                      </p>
+                      {order.nomor_meja && (
                         <p className="text-xs text-gray-500">
-                          Meja {order.tableNumber}
+                          Meja {order.nomor_meja}
+                        </p>
+                      )}
+                      {order.meja && !order.nomor_meja && (
+                        <p className="text-xs text-gray-500">
+                          Meja {order.meja}
                         </p>
                       )}
                     </div>
                     <div className="text-right">
                       <p className="text-lg font-bold text-gray-900">
-                        {formatCurrency(order.total)}
+                        {formatCurrency(total)}
                       </p>
                     </div>
                   </div>
                   <div className="pt-3 border-t border-gray-100">
                     <p className="text-xs text-gray-500">
-                      {order.items.length} item • ID: {order.id.slice(0, 8).toUpperCase()}
+                      {order.status === 'selesai' ? 'Selesai' : (order.status || 'Pesanan')} • User ID: {userId}
                     </p>
                   </div>
-                </div>
+                </button>
               )
             })}
+            {riwayatData.totalPages > 1 && (
+              <div className="text-center text-xs text-gray-500 pt-4">
+                Total {riwayatData.totalData} pesanan
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-center py-12">
+            <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-600 font-medium mb-2">Belum ada pesanan</p>
+            <p className="text-sm text-gray-500">Pesanan Anda akan muncul di sini</p>
           </div>
         )}
       </div>

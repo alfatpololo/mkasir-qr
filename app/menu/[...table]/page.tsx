@@ -1,22 +1,26 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import Image from 'next/image'
-import { ShoppingCart, Filter, Search, X, Check } from 'lucide-react'
+import { ShoppingCart, Filter, Search, X, Check, User, LogOut } from 'lucide-react'
 import { MenuList } from './MenuList'
 import { Cart } from './Cart'
 import { OrderStatusComponent } from '@/components/OrderStatus'
+import { CategoryTabs } from '@/components/CategoryTabs'
 import { useCartStore } from '@/lib/cart-store'
 import { createOrder } from '@/lib/firestore'
 import { formatCurrency } from '@/lib/utils'
 import { Button } from '@/components/Button'
-import { getCurrentUser, onAuthStateChange } from '@/lib/auth'
+import { signInWithPhoneOnly, signOutCustomerAPI, getCurrentUserAPI, onAuthStateChangeAPI, getSession, getStoredPassword } from '@/lib/auth'
+import { getCustomerRiwayat } from '@/lib/pos-api'
 import { parseTableParam, parseTableParamQuick, isEncryptedToken } from '@/lib/token-utils'
+import { Toast, useToast } from '@/components/Toast'
 
 export default function MenuPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const paramValueRaw = (params as any).table
   
   // Handle parameter yang mungkin array atau string
@@ -52,10 +56,17 @@ export default function MenuPage() {
   const [showFilter, setShowFilter] = useState(false)
   const [filterCategory, setFilterCategory] = useState<string | null>(null)
   const [availableCategories, setAvailableCategories] = useState<string[]>([])
+  const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const [isMobile, setIsMobile] = useState(true)
   const [currentUser, setCurrentUser] = useState<any>(null)
   const [lastScrollY, setLastScrollY] = useState(0)
   const [showHeader, setShowHeader] = useState(true)
+  const [showLoginModal, setShowLoginModal] = useState(false)
+  const [phoneNumber, setPhoneNumber] = useState('')
+  const [loginLoading, setLoginLoading] = useState(false)
+  const [loginError, setLoginError] = useState<string | null>(null)
+  const [customerPassword, setCustomerPassword] = useState<string>('') // Simpan password untuk fetch riwayat (dari API response)
+  const { showToast, toast, hideToast } = useToast()
   
   const setTableNumber = useCartStore((state) => state.setTableNumber)
   const items = useCartStore((state) => state.items)
@@ -169,13 +180,134 @@ export default function MenuPage() {
     return () => window.removeEventListener('resize', checkMobile)
   }, [])
 
-  // Check auth state (untuk tombol login/profil)
+  // Check auth state (untuk tombol login/profil) - API-based
   useEffect(() => {
-    const unsubscribe = onAuthStateChange((user) => {
+    // Check session immediately on mount
+    const sessionUser = getSession()
+    if (sessionUser) {
+      setCurrentUser(sessionUser)
+      
+      // Sync URL dengan customer_id jika belum ada
+      const currentCustomerId = searchParams.get('customer_id')
+      if (!currentCustomerId && sessionUser.customerId) {
+        const currentPath = window.location.pathname
+        const newUrl = `${currentPath}?customer_id=${sessionUser.customerId}`
+        router.replace(newUrl)
+      }
+    }
+    
+    // Subscribe to auth state changes
+    const unsubscribe = onAuthStateChangeAPI((user) => {
       setCurrentUser(user)
+      
+      // Sync URL dengan customer_id jika user login dan belum ada di URL
+      if (user && user.customerId) {
+        const currentCustomerId = searchParams.get('customer_id')
+        if (!currentCustomerId) {
+          const currentPath = window.location.pathname
+          const newUrl = `${currentPath}?customer_id=${user.customerId}`
+          router.replace(newUrl)
+        }
+      }
     })
     return () => unsubscribe()
-  }, [])
+  }, [router, searchParams])
+
+  const handlePhoneLogin = async () => {
+    if (!phoneNumber.trim()) {
+      setLoginError('Mohon masukkan nomor HP')
+      return
+    }
+
+    // Basic phone validation
+    const phoneRegex = /^(\+62|62|0)[0-9]{9,12}$/
+    const normalizedPhone = phoneNumber.replace(/\s|-|\(|\)/g, '')
+    if (!phoneRegex.test(normalizedPhone)) {
+      setLoginError('Format nomor HP tidak valid')
+      return
+    }
+
+    setLoginLoading(true)
+    setLoginError(null)
+
+    try {
+      console.log('🔐 Starting login process with phone only...')
+      console.log('🔐 Phone:', normalizedPhone)
+      
+      // Login dengan hanya nomor HP (password akan di-generate atau dari API)
+      const customerData = await signInWithPhoneOnly(normalizedPhone)
+      
+      console.log('✅ Login successful, customer data:', customerData)
+      
+      // Verify password/token was saved
+      const savedPasswordCheck = getStoredPassword()
+      console.log('🔍 Password/token check after login:', savedPasswordCheck)
+      
+      // Session sudah disimpan di signInWithPhoneOnly
+      if (savedPasswordCheck) {
+        setCustomerPassword(savedPasswordCheck)
+      }
+      setCurrentUser(customerData)
+      setShowLoginModal(false)
+      setPhoneNumber('')
+      
+      // Fetch riwayat setelah login berhasil (meskipun password kosong untuk phone-only login)
+      if (customerData.customerId) {
+        try {
+          // Gunakan password/token jika ada, atau default '000000' untuk phone-only login
+          const kode = savedPasswordCheck || '000000'
+          console.log('📋 Fetching riwayat after login, customerId:', customerData.customerId, 'kode:', kode ? '***' : 'EMPTY')
+          
+          const riwayatData = await getCustomerRiwayat(
+            customerData.customerId,
+            kode,
+            1,
+            10
+          )
+          console.log('✅ Riwayat data fetched after login:', riwayatData)
+          // Simpan ke localStorage sebagai cache (opsional, karena akan di-fetch lagi dari API)
+          localStorage.setItem('customerRiwayat', JSON.stringify(riwayatData))
+        } catch (riwayatError) {
+          console.warn('⚠️ Failed to fetch riwayat after login:', riwayatError)
+          // Continue anyway, login still successful
+          // Riwayat akan di-fetch lagi saat user membuka profile/my-orders
+        }
+      }
+      
+      // Tetap di menu, tapi update URL dengan customer_id
+      const currentPath = window.location.pathname
+      const newUrl = `${currentPath}?customer_id=${customerData.customerId}`
+      router.replace(newUrl)
+      
+      // Show success toast
+      showToast('Login berhasil!', 'success')
+    } catch (error: any) {
+      setLoginError(error.message || 'Gagal login')
+    } finally {
+      setLoginLoading(false)
+    }
+  }
+
+  const handleLogout = async () => {
+    try {
+      // Clear API session
+      await signOutCustomerAPI()
+      setCurrentUser(null)
+      setCustomerPassword('')
+      
+      // Clear cart saat logout
+      clearCart()
+      
+      // Show success toast
+      showToast('Logout berhasil!', 'success')
+    } catch (error: any) {
+      console.error('Error logging out:', error)
+      // Clear anyway even if error
+      setCurrentUser(null)
+      setCustomerPassword('')
+      clearCart()
+    }
+  }
 
   const handleCheckout = async (
     customerName: string,
@@ -401,11 +533,11 @@ export default function MenuPage() {
   }
 
   return (
-    <div className="w-full bg-gray-50 pb-28">
-      {/* Header dengan Background Putih */}
-      <div className="bg-white">
+    <div className="w-full bg-white pb-28">
+      {/* Navbar - Sticky di atas */}
+      <div className="sticky top-0 z-40 bg-white">
         <div className="max-w-md mx-auto">
-          {/* Top Bar: Logo, Cart Icon, Login Button */}
+          {/* Top Bar: Logo, Cart Icon */}
           <div className="flex items-center justify-between mb-0 bg-gradient-to-r from-primary-700 via-primary-600 to-primary-700 px-4 py-0.5">
             {/* Logo - Kiri */}
             <div className="w-24 h-24 relative">
@@ -420,9 +552,25 @@ export default function MenuPage() {
               />
             </div>
             
-            {/* Cart Icon - Kanan */}
+            {/* Cart Icon & Login - Kanan */}
             <div className="flex items-center gap-2">
-              {/* Cart Icon */}
+              {currentUser ? (
+                <button
+                  onClick={() => router.push('/profile')}
+                  className="p-2 hover:bg-white/20 rounded-xl transition-colors"
+                  title={currentUser.displayName || currentUser.email || 'Profile'}
+                >
+                  <User className="w-5 h-5 text-white" />
+                </button>
+              ) : (
+                <button
+                  onClick={() => setShowLoginModal(true)}
+                  className="p-2 hover:bg-white/20 rounded-xl transition-colors"
+                  title="Login"
+                >
+                  <User className="w-5 h-5 text-white" />
+                </button>
+              )}
               <button
                 onClick={() => {
                   const cartButton = document.querySelector('[data-cart-trigger]') as HTMLElement
@@ -439,11 +587,16 @@ export default function MenuPage() {
               </button>
             </div>
           </div>
-          
+        </div>
+      </div>
+
+      {/* Header dengan Background Putih - Meja, Filter, Search */}
+      <div className="bg-white">
+        <div className="max-w-md mx-auto">
           {/* Status Meja - Card dengan Background Foto Cafe */}
           <div 
-            className={`mb-4 mt-4 px-4 transition-transform duration-300 ease-in-out ${
-              showHeader ? 'translate-y-0' : '-translate-y-full opacity-0 pointer-events-none'
+            className={`mb-4 mt-4 px-4 transition-all duration-300 ease-in-out ${
+              showHeader ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none h-0 overflow-hidden'
             }`}
           >
             <div className="relative w-full h-28 rounded-xl overflow-hidden">
@@ -468,20 +621,19 @@ export default function MenuPage() {
             </div>
           </div>
           
-          {/* Filter & Search - Sejajar Berdekatan */}
+          {/* Filter & Search - Minimal */}
           <div 
-            className={`flex items-center gap-2 px-4 mb-2 transition-transform duration-300 ease-in-out ${
-              showHeader ? 'translate-y-0' : '-translate-y-full opacity-0 pointer-events-none'
+            className={`flex items-center gap-2 px-4 mb-3 transition-all duration-300 ease-in-out ${
+              showHeader ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0 pointer-events-none h-0 overflow-hidden'
             }`}
           >
             <button 
               onClick={() => setShowFilter(!showFilter)}
-              className="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-gradient-to-r from-primary-600 via-primary-500 to-primary-600 text-white rounded-xl hover:from-primary-700 hover:via-primary-600 hover:to-primary-700 transition-all shadow-lg shadow-primary-500/30 font-semibold"
+              className="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-gray-50 text-gray-700 rounded-lg hover:bg-gray-100 border border-gray-200 transition-colors text-sm font-medium"
             >
               <Filter className="w-4 h-4" />
-              <span className="text-xs font-medium">Filter</span>
               {filterCategory && (
-                <span className="ml-1 w-2 h-2 bg-white rounded-full"></span>
+                <span className="ml-0.5 w-1.5 h-1.5 bg-primary-600 rounded-full"></span>
               )}
             </button>
             {showSearch ? (
@@ -492,7 +644,7 @@ export default function MenuPage() {
                   placeholder="Cari menu..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full px-4 py-3 pr-10 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                  className="w-full px-3 py-2.5 pr-9 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary-500 focus:border-primary-500 text-sm bg-white"
                   autoFocus
                 />
                 <button
@@ -500,30 +652,44 @@ export default function MenuPage() {
                     setShowSearch(false)
                     setSearchQuery('')
                   }}
-                  className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 rounded-lg"
+                  className="absolute right-2 top-1/2 transform -translate-y-1/2 p-1 hover:bg-gray-100 rounded"
                 >
-                  <X className="w-4 h-4 text-gray-500" />
+                  <X className="w-4 h-4 text-gray-400" />
                 </button>
               </div>
             ) : (
               <button 
                 onClick={() => setShowSearch(true)}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors font-semibold"
+                className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium text-gray-700"
               >
-                <Search className="w-4 h-4 text-gray-600" />
-                <span className="text-sm font-medium text-gray-700">Search</span>
+                <Search className="w-4 h-4 text-gray-500" />
+                <span>Cari menu</span>
               </button>
             )}
           </div>
         </div>
       </div>
 
+      {/* CategoryTabs - Sticky di bawah navbar */}
+      {availableCategories.length > 0 && (
+        <div className="sticky top-[96px] z-30 bg-white border-b border-gray-100">
+          <CategoryTabs
+            categories={availableCategories}
+            activeCategory={filterCategory || activeCategory}
+            onCategoryChange={(category) => {
+              setActiveCategory(category)
+              setFilterCategory(null)
+            }}
+          />
+        </div>
+      )}
+
       <MenuList 
         token={rawParam}
         searchQuery={showSearch ? searchQuery : ''} 
         filterCategory={filterCategory}
+        activeCategory={activeCategory}
         onCategoriesReady={setAvailableCategories}
-        showHeader={showHeader}
       />
 
       {/* Filter Modal */}
@@ -547,6 +713,7 @@ export default function MenuPage() {
                   <button
                     onClick={() => {
                       setFilterCategory(null)
+                      setActiveCategory(null)
                       setShowFilter(false)
                     }}
                     className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all ${
@@ -565,6 +732,7 @@ export default function MenuPage() {
                       key={category}
                       onClick={() => {
                         setFilterCategory(category)
+                        setActiveCategory(category)
                         setShowFilter(false)
                       }}
                       className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 transition-all ${
@@ -589,6 +757,7 @@ export default function MenuPage() {
                 className="flex-1"
                 onClick={() => {
                   setFilterCategory(null)
+                  setActiveCategory(null)
                   setShowFilter(false)
                 }}
               >
@@ -611,6 +780,81 @@ export default function MenuPage() {
         currentUser={currentUser}
         tableNumber={tableInfo.isToken ? 0 : tableInfo.tableNumber}
         token={tableInfo.isToken ? tableInfo.rawToken || rawParam : undefined}
+      />
+
+      {/* Login Modal */}
+      {showLoginModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden">
+            {/* Header */}
+            <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-primary-50 to-white">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-gray-900">Login</h2>
+                <button
+                  onClick={() => {
+                    setShowLoginModal(false)
+                    setPhoneNumber('')
+                    setLoginError(null)
+                  }}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <X className="w-5 h-5 text-gray-500" />
+                </button>
+              </div>
+              <p className="text-sm text-gray-600 mt-1">Masukkan nomor HP yang sudah terdaftar</p>
+            </div>
+
+            {/* Form */}
+            <div className="p-6">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Nomor HP
+                  </label>
+                  <input
+                    type="tel"
+                    value={phoneNumber}
+                    onChange={(e) => {
+                      setPhoneNumber(e.target.value)
+                      setLoginError(null)
+                    }}
+                    placeholder="08xxxxxxxxxx"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-base"
+                    autoFocus
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        handlePhoneLogin()
+                      }
+                    }}
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Format: 08xxxxxxxxxx</p>
+                </div>
+
+                {loginError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-sm text-red-600">{loginError}</p>
+                  </div>
+                )}
+
+                <button
+                  onClick={handlePhoneLogin}
+                  disabled={loginLoading || !phoneNumber.trim()}
+                  className="w-full py-3 bg-gradient-to-r from-primary-600 to-primary-500 text-white rounded-lg hover:from-primary-700 hover:to-primary-600 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed font-semibold shadow-sm"
+                >
+                  {loginLoading ? 'Memproses...' : 'Login'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      <Toast
+        message={toast.message}
+        type={toast.type}
+        isVisible={toast.isVisible}
+        onClose={hideToast}
       />
     </div>
   )
