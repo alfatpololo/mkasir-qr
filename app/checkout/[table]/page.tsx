@@ -53,7 +53,7 @@ export default function CheckoutFormPage() {
   const sessionUser = getSession()
   
   const menuUrl = () => {
-    const cid = (sessionUser as any)?.customerId
+    const cid = sessionUser?.customerId
     return cid ? `/menu/${DEFAULT_MENU_TOKEN}?customer_id=${cid}` : `/menu/${DEFAULT_MENU_TOKEN}`
   }
   
@@ -68,6 +68,11 @@ export default function CheckoutFormPage() {
     customerPhone?: string
     customerEmail?: string
   }>({})
+  
+  // Helper function untuk check apakah form sudah terisi dari session
+  const isFormFilledFromSession = (): boolean => {
+    return !!(sessionUser && formData.customerName && formData.customerPhone)
+  }
   
   const items = useCartStore((state) => state.items)
   const getTotal = useCartStore((state) => state.getTotal)
@@ -471,14 +476,14 @@ export default function CheckoutFormPage() {
         <form onSubmit={handleSubmit} className="bg-white rounded-xl shadow-md border border-gray-100 p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-bold text-gray-900">Data Pembeli</h2>
-            {sessionUser && formData.customerName && formData.customerPhone && (
+            {isFormFilledFromSession() && (
               <span className="text-xs text-primary-600 bg-primary-50 px-2 py-1 rounded-full">
                 ✓ Data dari akun (tidak perlu diisi)
               </span>
             )}
           </div>
           
-          {sessionUser && formData.customerName && formData.customerPhone && (
+          {isFormFilledFromSession() && (
             <div className="mb-4 p-3 bg-primary-50 border border-primary-200 rounded-lg">
               <p className="text-sm text-primary-800">
                 Data Anda sudah terisi otomatis dari akun. Anda dapat langsung melanjutkan ke pembayaran.
@@ -528,8 +533,8 @@ export default function CheckoutFormPage() {
                       : 'border-gray-300 focus:ring-primary-500'
                   }`}
                   required
-                  disabled={loadingCustomerData || (sessionUser && formData.customerName && formData.customerPhone)}
-                  readOnly={sessionUser && formData.customerName && formData.customerPhone}
+                  disabled={loadingCustomerData || isFormFilledFromSession()}
+                  readOnly={isFormFilledFromSession()}
                   maxLength={100}
                 />
               </div>
@@ -564,8 +569,8 @@ export default function CheckoutFormPage() {
                       : 'border-gray-300 focus:ring-primary-500'
                   }`}
                   required
-                  disabled={loadingCustomerData || (sessionUser && formData.customerName && formData.customerPhone)}
-                  readOnly={sessionUser && formData.customerName && formData.customerPhone}
+                  disabled={loadingCustomerData || isFormFilledFromSession()}
+                  readOnly={isFormFilledFromSession()}
                   maxLength={15}
                 />
               </div>
@@ -599,8 +604,8 @@ export default function CheckoutFormPage() {
                       ? 'border-red-300 focus:ring-red-500'
                       : 'border-gray-300 focus:ring-primary-500'
                   }`}
-                  disabled={loadingCustomerData || (sessionUser && formData.customerName && formData.customerPhone)}
-                  readOnly={sessionUser && formData.customerName && formData.customerPhone}
+                  disabled={loadingCustomerData || isFormFilledFromSession()}
+                  readOnly={isFormFilledFromSession()}
                   maxLength={100}
                 />
               </div>

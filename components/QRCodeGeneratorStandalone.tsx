@@ -191,3 +191,5 @@ export const QRCodeGeneratorStandalone: React.FC<QRCodeGeneratorStandaloneProps>
 
 
 
+
+

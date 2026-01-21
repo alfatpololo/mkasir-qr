@@ -64,10 +64,10 @@ function MyOrdersContent() {
       if (!currentSessionUser || !currentSessionUser.customerId) {
         console.warn('⚠️ No session found, redirecting to menu')
         router.push(menuUrl())
-        setLoading(false)
-        return
-      }
-      
+      setLoading(false)
+      return
+    }
+
       // Simpan session user ke state untuk digunakan di render
       setSessionUser(currentSessionUser)
       
@@ -172,46 +172,46 @@ function MyOrdersContent() {
               // Handle jika data adalah object yang berisi array di dalamnya
               // Cek berbagai kemungkinan property yang mungkin berisi array
               console.log(`📋 data is object, checking for nested array...`)
-              console.log(`📋 data keys:`, Object.keys(riwayat.data))
+              const dataObj = riwayat.data as { [key: string]: any }
+              console.log(`📋 data keys:`, Object.keys(dataObj))
               
               // Cek berbagai kemungkinan struktur
-              if (riwayat.data.items && Array.isArray(riwayat.data.items)) {
-                dataArr = riwayat.data.items
+              if (dataObj.items && Array.isArray(dataObj.items)) {
+                dataArr = dataObj.items
                 console.log(`✅ Found array in data.items, length: ${dataArr.length}`)
-              } else if (riwayat.data.list && Array.isArray(riwayat.data.list)) {
-                dataArr = riwayat.data.list
+              } else if (dataObj.list && Array.isArray(dataObj.list)) {
+                dataArr = dataObj.list
                 console.log(`✅ Found array in data.list, length: ${dataArr.length}`)
-              } else if (riwayat.data.transactions && Array.isArray(riwayat.data.transactions)) {
-                dataArr = riwayat.data.transactions
+              } else if (dataObj.transactions && Array.isArray(dataObj.transactions)) {
+                dataArr = dataObj.transactions
                 console.log(`✅ Found array in data.transactions, length: ${dataArr.length}`)
               } else {
                 // Coba convert object values ke array jika semua values adalah objects
-                const values = Object.values(riwayat.data)
+                const values = Object.values(dataObj)
                 if (values.length > 0 && Array.isArray(values[0])) {
                   dataArr = values[0] as any[]
                   console.log(`✅ Found array in first property of data object, length: ${dataArr.length}`)
                 } else {
                   console.error(`❌ Could not find array in data object`)
-                  console.error(`❌ data object structure:`, riwayat.data)
+                  console.error(`❌ data object structure:`, dataObj)
                   dataArr = []
                 }
               }
-            } else if (Array.isArray(riwayat)) {
-              // Jika response langsung array (fallback - tidak seharusnya terjadi)
-              dataArr = riwayat
-              console.log(`✅ Response is direct array, length: ${dataArr.length}`)
-            } else if (riwayat?.items && Array.isArray(riwayat.items)) {
-              // Fallback ke items
-              dataArr = riwayat.items
-              console.log(`✅ Response has items property, length: ${dataArr.length}`)
             } else {
-              console.error(`❌ ERROR: Unexpected response structure!`)
-              console.error(`❌ Response:`, riwayat)
-              console.error(`❌ Response keys:`, Object.keys(riwayat))
-              console.error(`❌ Response.data type:`, typeof riwayat?.data)
-              console.error(`❌ Response.data isArray:`, Array.isArray(riwayat?.data))
-              console.error(`❌ Response.data value:`, riwayat?.data)
-              dataArr = []
+              // Fallback: cek apakah riwayat memiliki property items (untuk backward compatibility)
+              const riwayatAny = riwayat as any
+              if (riwayatAny?.items && Array.isArray(riwayatAny.items)) {
+                dataArr = riwayatAny.items
+                console.log(`✅ Response has items property, length: ${dataArr.length}`)
+              } else {
+                console.error(`❌ ERROR: Unexpected response structure!`)
+                console.error(`❌ Response:`, riwayat)
+                console.error(`❌ Response keys:`, Object.keys(riwayat))
+                console.error(`❌ Response.data type:`, typeof riwayat?.data)
+                console.error(`❌ Response.data isArray:`, Array.isArray(riwayat?.data))
+                console.error(`❌ Response.data value:`, riwayat?.data)
+                dataArr = []
+              }
             }
           }
           
@@ -234,14 +234,15 @@ function MyOrdersContent() {
           if (Array.isArray(dataArr) && dataArr.length > 0) {
             allData = [...allData, ...dataArr]
             console.log(`✅ Added ${dataArr.length} items to allData. Total: ${allData.length}`)
-          } else {
+        } else {
             console.warn(`⚠️ Skipping invalid dataArr at page ${page}. Type:`, typeof dataArr, `IsArray:`, Array.isArray(dataArr))
           }
           
           console.log(`📋 Page ${page}: received ${dataArr.length} items, total so far: ${allData.length}`)
           
           // Gunakan metadata dari API untuk menentukan apakah sudah di halaman terakhir
-          const totalPagesFromAPI = riwayat?.totalPages || riwayat?.total_pages
+          const riwayatAny = riwayat as any
+          const totalPagesFromAPI = riwayat?.totalPages || riwayatAny?.total_pages
           
           if (totalPagesFromAPI && page >= totalPagesFromAPI) {
             console.log(`📋 Last page reached (page ${page} >= totalPages ${totalPagesFromAPI}), stopping...`)
@@ -415,7 +416,10 @@ function MyOrdersContent() {
 
   // Tampilkan detail order jika dipilih
   if (selectedOrder) {
-    const status = statusConfig[selectedOrder.status]
+    // Map API status to Order status format
+    const apiStatus = selectedOrder.status || 'PAID'
+    const orderStatus: Order['status'] = apiStatus === 'selesai' ? 'PAID' : (apiStatus as Order['status']) || 'PAID'
+    const status = statusConfig[orderStatus] || statusConfig.PAID // Fallback to PAID if status not found
 
     return (
       <div className="min-h-screen bg-gray-50">
@@ -507,7 +511,7 @@ function MyOrdersContent() {
           <div className="bg-white rounded-lg border border-gray-200 p-4">
             <h3 className="text-sm font-semibold text-gray-900 mb-3">Detail item</h3>
             <div className="space-y-3">
-              {selectedOrder.items.map((item, index) => (
+              {selectedOrder.items.map((item: any, index: number) => (
                 <div key={index} className="flex items-center gap-3">
                   <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center">
                     <Package className="w-6 h-6 text-gray-400" />
@@ -522,7 +526,7 @@ function MyOrdersContent() {
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-semibold text-gray-900">
-                      {formatCurrency((selectedOrder.total / selectedOrder.items.reduce((sum, i) => sum + i.qty, 0)) * item.qty)}
+                      {formatCurrency((selectedOrder.total / selectedOrder.items.reduce((sum: number, i: any) => sum + i.qty, 0)) * item.qty)}
                     </p>
                   </div>
                 </div>

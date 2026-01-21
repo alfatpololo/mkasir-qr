@@ -190,6 +190,7 @@ function PaymentMethodContent() {
         name: rawName || '',
         phone: rawPhone || '',
         email: rawEmail || '',
+        note: rawNote || '',
       })
       setDecryptingData(false)
     }
@@ -213,12 +214,19 @@ function PaymentMethodContent() {
         setLoadingProfile(true)
         console.log('🔍 Checking QRIS availability for token:', tableInfo.rawToken)
         
+        // Type guard: ensure rawToken exists
+        if (!tableInfo.rawToken) {
+          console.warn('⚠️ No rawToken available, skipping QRIS check')
+          setLoadingProfile(false)
+          return
+        }
+        
         const profileResponse = await getMejaProfile(tableInfo.rawToken)
         
         console.log('📋 Profile response:', JSON.stringify(profileResponse, null, 2))
         
         if (profileResponse.status === 'Success' && profileResponse.data?.stall?.qris) {
-          const qrisPath = profileResponse.data.stall.qris
+          const qrisPath = profileResponse.data?.stall?.qris
           console.log('📋 QRIS path from API:', qrisPath)
           
           // Cek apakah qris ada, tidak kosong, dan tidak null

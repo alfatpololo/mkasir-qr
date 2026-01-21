@@ -596,7 +596,7 @@ export function buildMejaTransaksiPayload(params: {
   if (customerId !== undefined && customerId !== null) {
     // Convert ke number jika string, untuk konsistensi dengan API
     const customerIdNum = typeof customerId === 'string' ? parseInt(customerId, 10) : customerId
-    if (!isNaN(customerIdNum) && customerIdNum > 0) {
+    if (typeof customerIdNum === 'number' && !Number.isNaN(customerIdNum) && customerIdNum > 0) {
       payload.customer_id = customerIdNum
       console.log('✅ customer_id added to payload:', customerIdNum, '(original:', customerId, ')')
     } else {

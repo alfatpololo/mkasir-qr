@@ -11,6 +11,7 @@ import {
   fetchSignInMethodsForEmail
 } from 'firebase/auth'
 import { API_BASE_URL } from './pos-api'
+import { createOrUpdateCustomer } from './firestore'
 
 /**
  * Convert Firebase error to user-friendly message
